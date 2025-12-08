@@ -1,0 +1,664 @@
+﻿@page "/stockadjustment"
+@layout MainLayout
+@using MauiApp2.Services
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+
+<link href="css/stockadjustment.css" rel="stylesheet" />
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+
+    <main class="main-content">
+        <div class="content-header">
+            <h1>Inventory Management</h1>
+        </div>
+
+        <div class="stock-adjustment-container">
+            <div class="tab-header">
+                <button class="tab-button active">Stock Adjustment</button>
+            </div>
+
+            <!-- Error Alert -->
+            @if (showError)
+            {
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-triangle error-icon"></i>
+                    <span>@errorMessage</span>
+                    <button class="alert-close" @onclick="ClearError">×</button>
+                </div>
+            }
+
+            <!-- Success Alert -->
+            @if (showSuccess)
+            {
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle success-icon"></i>
+                    <span>@successMessage</span>
+                    <button class="alert-close" @onclick="ClearSuccess">×</button>
+                </div>
+            }
+
+            <!-- Add Adjustment Button -->
+            <div class="add-adjustment-section">
+                <button class="btn-add-adjustment-main" @onclick="ShowAdjustmentModal">
+                    <i class="fas fa-sliders-h adjust-icon"></i> Create Adjustment
+                </button>
+            </div>
+
+            <div class="history-section">
+                <div class="history-header">
+                    <h2>Adjustment History</h2>
+                </div>
+
+                <div class="history-controls">
+                    <div class="sort-control">
+                        <i class="fas fa-calendar-alt calendar-icon"></i>
+                        <input type="date" class="form-control date-input" @bind="filterDate" />
+                    </div>
+                    <div class="search-control">
+                        <input type="text" class="form-control search-input" placeholder="Enter product name or id" value="@searchTerm" @oninput="OnSearchInput" />
+                        <button class="btn-search" @onclick="SearchAdjustmentHistory">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                    <div class="filter-control">
+                        <select class="form-control" @bind="adjustmentTypeFilter">
+                            <option value="">All Types</option>
+                            <option value="increase">Increase Only</option>
+                            <option value="decrease">Decrease Only</option>
+                            <option value="correction">Correction Only</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="history-table-wrapper">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Product ID</th>
+                                <th>Product Name</th>
+                                <th>Brand</th>
+                                <th>Category</th>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Previous Qty</th>
+                                <th>New Qty</th>
+                                <th>Difference</th>
+                                <th>Reason</th>
+                                <th>Processed By</th>
+                                <th>Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (PaginatedAdjustments?.Any() == true)
+                            {
+                                @foreach (var record in PaginatedAdjustments)
+                                {
+                                    <tr>
+                                        <td>@record.ProductId</td>
+                                        <td>@record.ProductName</td>
+                                        <td>@record.Brand</td>
+                                        <td>@record.Category</td>
+                                        <td>@record.AdjustmentDate.ToString("MM/dd/yyyy")</td>
+                                        <td>
+                                            <span class="adjustment-badge adjustment-@record.AdjustmentType.ToLower()">
+                                                @if (record.AdjustmentType == "Increase")
+                                                {
+                                                    <i class="fas fa-arrow-up"></i>
+                                                }
+                                                else if (record.AdjustmentType == "Decrease")
+                                                {
+                                                    <i class="fas fa-arrow-down"></i>
+                                                }
+                                                else
+                                                {
+                                                    <i class="fas fa-exchange-alt"></i>
+                                                }
+                                                @GetAdjustmentTypeDisplay(record.AdjustmentType)
+                                            </span>
+                                        </td>
+                                        <td>@record.PreviousQuantity</td>
+                                        <td>@record.NewQuantity</td>
+                                        <td>
+                                            <span class="difference @(record.Difference > 0 ? "positive" : record.Difference < 0 ? "negative" : "neutral")">
+                                                @if (record.Difference > 0)
+                                                {
+                                                    <i class="fas fa-arrow-up"></i>
+                                                }
+                                                else if (record.Difference < 0)
+                                                {
+                                                    <i class="fas fa-arrow-down"></i>
+                                                }
+                                                else
+                                                {
+                                                    <i class="fas fa-equals"></i>
+                                                }
+                                                @(record.Difference > 0 ? "+" : "")@record.Difference
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="reason-with-icon">
+                                                @GetReasonIcon(record.Reason)
+                                                @record.Reason
+                                            </span>
+                                        </td>
+                                        <td>@record.ProcessedBy</td>
+                                        <td>@record.Remarks</td>
+                                    </tr>
+                                }
+                            }
+                            else
+                            {
+                                <tr>
+                                    <td colspan="12" class="no-data">
+                                        <i class="fas fa-inbox"></i>
+                                        No adjustment records found
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                @if (FilteredAdjustments.Any())
+                {
+                    <Pagination CurrentPage="@currentPage"
+                                PageSize="@pageSize"
+                                TotalItems="@FilteredAdjustments.Count()"
+                                PageChanged="@OnPageChanged"
+                                PageSizeChanged="@OnPageSizeChanged" />
+                }
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Adjustment Modal -->
+@if (showAdjustmentModal)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3><i class="fas fa-sliders-h"></i> Stock Adjustment</h3>
+                <button class="modal-close" @onclick="CloseModal">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="adjustment-form">
+                    <!-- Validation Errors -->
+                    @if (validationErrors?.Any() == true)
+                    {
+                        <div class="validation-errors">
+                            <h4><i class="fas fa-exclamation-circle"></i> Please fix the following errors:</h4>
+                            <ul>
+                                @foreach (var error in validationErrors)
+                                {
+                                    <li>@error</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label><i class="fas fa-box"></i> Product <span class="required">*</span></label>
+                            <select class="form-control @(HasError("Product") ? "error" : "")" @bind="selectedProductId">
+                                <option value="">Select product to adjust</option>
+                                @foreach (var product in products)
+                                {
+                                    <option value="@product.Id">@product.Name - @product.Brand (@product.Category) - Current Stock: @product.CurrentStock</option>
+                                }
+                            </select>
+                            @if (HasError("Product"))
+                            {
+                                <span class="field-error"><i class="fas fa-exclamation-circle"></i> Please select a product</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label><i class="fas fa-exchange-alt"></i> Adjustment Type <span class="required">*</span></label>
+                            <select class="form-control @(HasError("AdjustmentType") ? "error" : "")" @bind="adjustmentType">
+                                <option value="">Select Type</option>
+                                <option value="Increase"><i class="fas fa-arrow-up text-success"></i> Increase Stock</option>
+                                <option value="Decrease"><i class="fas fa-arrow-down text-danger"></i> Decrease Stock</option>
+                                <option value="Correction"><i class="fas fa-sync-alt text-warning"></i> Quantity Correction</option>
+                            </select>
+                            @if (HasError("AdjustmentType"))
+                            {
+                                <span class="field-error"><i class="fas fa-exclamation-circle"></i> Please select adjustment type</span>
+                            }
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-hashtag"></i> New Quantity <span class="required">*</span></label>
+                            <input type="number" class="form-control @(HasError("NewQuantity") ? "error" : "")"
+                                   @bind="newQuantity" placeholder="Enter new quantity" min="0" />
+                            @if (HasError("NewQuantity"))
+                            {
+                                <span class="field-error"><i class="fas fa-exclamation-circle"></i> Please enter a valid quantity</span>
+                            }
+                            @if (selectedProductId != "" && newQuantity >= 0)
+                            {
+                                var product = products.FirstOrDefault(p => p.Id == selectedProductId);
+                                if (product != null)
+                                {
+                                    var difference = newQuantity - product.CurrentStock;
+                                    <div class="quantity-info">
+                                        <span class="current-stock"><i class="fas fa-cube"></i> Current: @product.CurrentStock</span>
+                                        <span class="difference @(difference > 0 ? "positive" : difference < 0 ? "negative" : "neutral")">
+                                            @if (difference > 0)
+                                            {
+                                                <i class="fas fa-arrow-up"></i>
+                                            }
+                                            else if (difference < 0)
+                                            {
+                                                <i class="fas fa-arrow-down"></i>
+                                            }
+                                            else
+                                            {
+                                                <i class="fas fa-equals"></i>
+                                            }
+                                            Difference: @(difference > 0 ? "+" : "")@difference
+                                        </span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-calendar-alt"></i> Date <span class="required">*</span></label>
+                            <div class="date-input-wrapper">
+                                <i class="fas fa-calendar-alt calendar-icon"></i>
+                                <input type="date" class="form-control date-input @(HasError("Date") ? "error" : "")"
+                                       @bind="adjustmentDate" max="@DateTime.Now.ToString("yyyy-MM-dd")" />
+                            </div>
+                            @if (HasError("Date"))
+                            {
+                                <span class="field-error"><i class="fas fa-exclamation-circle"></i> Date cannot be in the future</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label><i class="fas fa-clipboard-list"></i> Reason <span class="required">*</span></label>
+                            <select class="form-control @(HasError("Reason") ? "error" : "")" @bind="selectedReason">
+                                <option value="">Select Reason</option>
+                                <option value="Physical Count"><i class="fas fa-clipboard-check"></i> Physical Count</option>
+                                <option value="Damaged Goods"><i class="fas fa-ban"></i> Damaged Goods</option>
+                                <option value="Expired Items"><i class="fas fa-clock"></i> Expired Items</option>
+                                <option value="Theft/Loss"><i class="fas fa-exclamation-triangle"></i> Theft/Loss</option>
+                                <option value="System Error"><i class="fas fa-bug"></i> System Error</option>
+                                <option value="Return to Supplier"><i class="fas fa-undo"></i> Return to Supplier</option>
+                                <option value="Found Items"><i class="fas fa-search"></i> Found Items</option>
+                                <option value="Other"><i class="fas fa-ellipsis-h"></i> Other</option>
+                            </select>
+                            @if (HasError("Reason"))
+                            {
+                                <span class="field-error"><i class="fas fa-exclamation-circle"></i> Please select a reason</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group remarks-group">
+                            <label><i class="fas fa-sticky-note"></i> Remarks/Notes (Optional)</label>
+                            <textarea class="form-control" @bind="remarks" placeholder="Additional details about this adjustment..." rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="CloseModal">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button class="btn-submit" @onclick="SubmitAdjustment" disabled="@isSubmitting">
+                    @if (isSubmitting)
+                    {
+                        <i class="fas fa-spinner fa-spin"></i>
+                        
+                                }
+                    else
+                    {
+                        <i class="fas fa-save"></i>
+                        
+                                }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isInventoryMenuOpen = true;
+    private bool showAdjustmentModal = false;
+    private bool isSubmitting = false;
+    private bool showError = false;
+    private bool showSuccess = false;
+
+    // Form fields
+    private string selectedProductId = "";
+    private string adjustmentType = "";
+    private int newQuantity = 0;
+    private DateTime adjustmentDate = DateTime.Now;
+    private string selectedReason = "";
+    private string remarks = "";
+    private string errorMessage = "";
+    private string successMessage = "";
+    private List<string> validationErrors = new List<string>();
+
+    // Filter fields
+    private DateTime? filterDate = null;
+    private string searchTerm = "";
+    private string adjustmentTypeFilter = "";
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+
+    // Data collections (loaded from database)
+    private List<Product> products = new List<Product>();
+    private List<AdjustmentRecord> adjustmentHistory = new List<AdjustmentRecord>();
+
+    protected override void OnInitialized()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+        // Data will be loaded from database when services are implemented
+    }
+
+    private IEnumerable<AdjustmentRecord> FilteredAdjustments
+    {
+        get
+        {
+            var filtered = adjustmentHistory;
+
+            if (filterDate.HasValue)
+            {
+                filtered = filtered.Where(a => a.AdjustmentDate.Date == filterDate.Value.Date).ToList();
+            }
+
+            if (!string.IsNullOrEmpty(searchTerm))
+            {
+                filtered = filtered.Where(a =>
+                    a.ProductId.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    a.ProductName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    a.Brand.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    a.Category.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+                ).ToList();
+            }
+
+            if (!string.IsNullOrEmpty(adjustmentTypeFilter))
+            {
+                filtered = filtered.Where(a =>
+                    a.AdjustmentType.ToLower().Contains(adjustmentTypeFilter.ToLower())
+                ).ToList();
+            }
+
+            return filtered.OrderByDescending(a => a.AdjustmentDate);
+        }
+    }
+
+    private IEnumerable<AdjustmentRecord> PaginatedAdjustments
+    {
+        get
+        {
+            var filtered = FilteredAdjustments.ToList();
+            return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
+        }
+    }
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+    {
+        pageSize = newPageSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? "";
+        currentPage = 1;
+    }
+
+    private void ToggleInventoryMenu()
+    {
+        isInventoryMenuOpen = !isInventoryMenuOpen;
+    }
+
+    private void ShowAdjustmentModal()
+    {
+        showAdjustmentModal = true;
+        ClearValidationErrors();
+        StateHasChanged();
+    }
+
+    private void CloseModal()
+    {
+        showAdjustmentModal = false;
+        ResetForm();
+        ClearValidationErrors();
+        StateHasChanged();
+    }
+
+    private void ResetForm()
+    {
+        selectedProductId = "";
+        adjustmentType = "";
+        newQuantity = 0;
+        adjustmentDate = DateTime.Now;
+        selectedReason = "";
+        remarks = "";
+        isSubmitting = false;
+    }
+
+    private void ClearValidationErrors()
+    {
+        validationErrors.Clear();
+    }
+
+    private void ClearError()
+    {
+        showError = false;
+        errorMessage = "";
+    }
+
+    private void ClearSuccess()
+    {
+        showSuccess = false;
+        successMessage = "";
+    }
+
+    private bool HasError(string fieldName)
+    {
+        return validationErrors.Any(e => e.Contains(fieldName));
+    }
+
+    private List<string> ValidateForm()
+    {
+        var errors = new List<string>();
+
+        if (string.IsNullOrEmpty(selectedProductId))
+            errors.Add("Product: Please select a product");
+
+        if (string.IsNullOrEmpty(adjustmentType))
+            errors.Add("AdjustmentType: Please select adjustment type");
+
+        if (newQuantity < 0)
+            errors.Add("NewQuantity: Quantity cannot be negative");
+
+        if (string.IsNullOrEmpty(selectedReason))
+            errors.Add("Reason: Please select a reason");
+
+        if (adjustmentDate > DateTime.Now)
+            errors.Add("Date: Adjustment date cannot be in the future");
+
+        return errors;
+    }
+
+    private async Task SubmitAdjustment()
+    {
+        try
+        {
+            isSubmitting = true;
+            ClearValidationErrors();
+            ClearError();
+            ClearSuccess();
+            StateHasChanged();
+
+            // Validate form
+            validationErrors = ValidateForm();
+
+            if (validationErrors.Any())
+            {
+                StateHasChanged();
+                return;
+            }
+
+            // Simulate API call delay
+            await Task.Delay(1000);
+
+            // Create new adjustment record
+            var product = products.FirstOrDefault(p => p.Id == selectedProductId);
+
+            if (product == null)
+            {
+                ShowError("Invalid product selected");
+                return;
+            }
+
+            var newRecord = new AdjustmentRecord
+            {
+                ProductId = selectedProductId,
+                ProductName = product.Name,
+                Brand = product.Brand,
+                Category = product.Category,
+                AdjustmentDate = adjustmentDate,
+                AdjustmentType = adjustmentType,
+                PreviousQuantity = product.CurrentStock,
+                NewQuantity = newQuantity,
+                Reason = selectedReason,
+                ProcessedBy = "Current User",
+                Remarks = remarks
+            };
+
+            // Add to history
+            adjustmentHistory.Insert(0, newRecord);
+
+            // Update product stock (in real app, this would be an API call)
+            product.CurrentStock = newQuantity;
+
+            // Show success message
+            ShowSuccess($"Successfully adjusted stock for {product.Name} from {newRecord.PreviousQuantity} to {newQuantity} units");
+
+            // Close modal and reset form
+            CloseModal();
+
+            // Refresh the table
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            ShowError($"An error occurred while processing adjustment: {ex.Message}");
+        }
+        finally
+        {
+            isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowError(string message)
+    {
+        errorMessage = message;
+        showError = true;
+        StateHasChanged();
+    }
+
+    private void ShowSuccess(string message)
+    {
+        successMessage = message;
+        showSuccess = true;
+        StateHasChanged();
+    }
+
+    private void SearchAdjustmentHistory()
+    {
+        // In a real application, this would call an API
+        if (!string.IsNullOrEmpty(searchTerm))
+        {
+            // Filter logic is handled in the FilteredAdjustments property
+            StateHasChanged();
+        }
+    }
+
+    private string GetAdjustmentTypeDisplay(string type)
+    {
+        return type switch
+        {
+            "Increase" => "Increase",
+            "Decrease" => "Decrease",
+            "Correction" => "Correction",
+            _ => type
+        };
+    }
+
+    private MarkupString GetReasonIcon(string reason)
+    {
+        var icon = reason switch
+        {
+            "Physical Count" => "fas fa-clipboard-check",
+            "Damaged Goods" => "fas fa-ban",
+            "Expired Items" => "fas fa-clock",
+            "Theft/Loss" => "fas fa-exclamation-triangle",
+            "System Error" => "fas fa-bug",
+            "Return to Supplier" => "fas fa-undo",
+            "Found Items" => "fas fa-search",
+            _ => "fas fa-ellipsis-h"
+        };
+        return new MarkupString($"<i class='{icon}'></i>");
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/");
+    }
+
+    // Helper classes
+    private class Product
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Brand { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public int CurrentStock { get; set; }
+    }
+
+    private class AdjustmentRecord
+    {
+        public string ProductId { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+        public string Brand { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public DateTime AdjustmentDate { get; set; }
+        public string AdjustmentType { get; set; } = string.Empty;
+        public int PreviousQuantity { get; set; }
+        public int NewQuantity { get; set; }
+        public int Difference => NewQuantity - PreviousQuantity;
+        public string Reason { get; set; } = string.Empty;
+        public string ProcessedBy { get; set; } = string.Empty;
+        public string Remarks { get; set; } = string.Empty;
+    }
+}

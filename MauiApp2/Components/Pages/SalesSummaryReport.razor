@@ -1,0 +1,550 @@
+@page "/reports/sales-summary"
+@layout MainLayout
+@using MauiApp2.Services
+@using SalesSummaryReportModel = MauiApp2.Services.SalesSummaryReport
+@using Microsoft.JSInterop
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject IReportService ReportService
+@inject IJSRuntime JSRuntime
+
+<link href="css/Reports.css" rel="stylesheet" />
+<link href="css/pagination.css" rel="stylesheet" />
+
+@if (!CanAccessReports())
+{
+    <div class="dashboard-wrapper">
+        <Sidebar />
+        <div class="main-content">
+            <div class="content-header">
+                <h1>Access Denied</h1>
+                <p>You do not have permission to access this page.</p>
+                <p>Only Inventory Manager and Administrator roles can access Reports.</p>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="dashboard-wrapper">
+        <Sidebar />
+        <div class="main-content">
+            <div class="content-header">
+                <h1>Sales Summary Report</h1>
+            </div>
+
+        <div class="inventory-section">
+            <div class="tab-section">
+                <div class="tabs">
+                    <button class="tab active">Sales Summary</button>
+                </div>
+            </div>
+
+            <div class="product-table-container">
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                <!-- Filters Section -->
+                <div class="report-filters">
+                    <!-- Quick Date Presets -->
+                    <div class="date-presets">
+                        <button class="preset-btn @(selectedPreset == "today" ? "active" : "")" @onclick='() => SetDatePreset("today")'>Today</button>
+                        <button class="preset-btn @(selectedPreset == "last7" ? "active" : "")" @onclick='() => SetDatePreset("last7")'>Last 7 Days</button>
+                        <button class="preset-btn @(selectedPreset == "last30" ? "active" : "")" @onclick='() => SetDatePreset("last30")'>Last 30 Days</button>
+                        <button class="preset-btn @(selectedPreset == "thismonth" ? "active" : "")" @onclick='() => SetDatePreset("thismonth")'>This Month</button>
+                        <button class="preset-btn @(selectedPreset == "lastmonth" ? "active" : "")" @onclick='() => SetDatePreset("lastmonth")'>Last Month</button>
+                        <button class="preset-btn @(selectedPreset == "thisyear" ? "active" : "")" @onclick='() => SetDatePreset("thisyear")'>This Year</button>
+                        <button class="preset-btn @(selectedPreset == "custom" ? "active" : "")" @onclick='() => SetDatePreset("custom")'>Custom</button>
+                    </div>
+
+                    <div class="filter-row">
+                        <div class="form-group">
+                            <label>Start Date</label>
+                            <input type="date" class="form-control" value="@startDate.ToString("yyyy-MM-dd")" @onchange="OnStartDateChanged" />
+                        </div>
+                        <div class="form-group">
+                            <label>End Date</label>
+                            <input type="date" class="form-control" value="@endDate.ToString("yyyy-MM-dd")" @onchange="OnEndDateChanged" />
+                        </div>
+                        <div class="form-group">
+                            <label>Group By</label>
+                            <select class="form-control" @bind="groupBy" @bind:event="onchange">
+                                <option value="Day">Day</option>
+                                <option value="Week">Week</option>
+                                <option value="Month">Month</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button class="btn-generate" @onclick="LoadReport">
+                                <i class="fas fa-search"></i>
+                                <span>Generate Report</span>
+                            </button>
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button class="btn-export" @onclick="ExportToPdf" disabled="@(!PaginatedReportData.Any())">
+                                <i class="fas fa-file-pdf"></i>
+                                <span>Export PDF</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search -->
+                @if (reportData.Any())
+                {
+                    <div class="toolbar">
+                        <div class="search-container">
+                            <input type="text"
+                                   class="search-input"
+                                   placeholder="Search by period..."
+                                   value="@searchTerm"
+                                   @oninput="OnSearchInput" />
+                            <span class="search-icon"><i class="fas fa-search"></i></span>
+                        </div>
+                    </div>
+                }
+
+                <!-- Report Table -->
+                @if (reportData.Any())
+                {
+                    <div id="report-content" class="report-content">
+                        <div class="report-header">
+                            <h2>Sales Summary Report</h2>
+                            <p>Period: @startDate.ToString("MM/dd/yyyy") - @endDate.ToString("MM/dd/yyyy") | Group By: @groupBy</p>
+                        </div>
+                        <div class="table-wrapper">
+                            <table id="report-table" class="product-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" @onclick='() => SortBy("Period")'>
+                                    Period
+                                    @if (sortColumn == "Period")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("TransactionCount")'>
+                                    Transactions
+                                    @if (sortColumn == "TransactionCount")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("Subtotal")'>
+                                    Subtotal
+                                    @if (sortColumn == "Subtotal")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("TaxAmount")'>
+                                    Tax Amount
+                                    @if (sortColumn == "TaxAmount")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("TotalAmount")'>
+                                    Total Amount
+                                    @if (sortColumn == "TotalAmount")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in PaginatedReportData)
+                            {
+                                <tr>
+                                    <td>@row.Period</td>
+                                    <td>@row.TransactionCount</td>
+                                    <td>₱@row.Subtotal.ToString("N2")</td>
+                                    <td>₱@row.TaxAmount.ToString("N2")</td>
+                                    <td><strong>₱@row.TotalAmount.ToString("N2")</strong></td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="total-row">
+                                <td><strong>Total</strong></td>
+                                <td><strong>@FilteredReportData.Sum(r => r.TransactionCount)</strong></td>
+                                <td><strong>₱@FilteredReportData.Sum(r => r.Subtotal).ToString("N2")</strong></td>
+                                <td><strong>₱@FilteredReportData.Sum(r => r.TaxAmount).ToString("N2")</strong></td>
+                                <td><strong>₱@FilteredReportData.Sum(r => r.TotalAmount).ToString("N2")</strong></td>
+                            </tr>
+                        </tfoot>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        @if (FilteredReportData.Any())
+                        {
+                            <Pagination CurrentPage="@currentPage"
+                                        PageSize="@pageSize"
+                                        TotalItems="@FilteredReportData.Count()"
+                                        PageChanged="@OnPageChanged"
+                                        PageSizeChanged="@OnPageSizeChanged" />
+                        }
+                    </div>
+                }
+
+                <!-- Mobile Card View -->
+                <div class="report-cards-container">
+                    @if (reportData.Any())
+                    {
+                        @foreach (var row in PaginatedReportData)
+                        {
+                            <div class="report-card-item">
+                                <div class="report-card-header">
+                                    <h3 class="report-card-title">@row.Period</h3>
+                                </div>
+                                <div class="report-card-body">
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Transactions</span>
+                                        <span class="report-info-value">@row.TransactionCount</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Subtotal</span>
+                                        <span class="report-info-value">₱@row.Subtotal.ToString("N2")</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Tax Amount</span>
+                                        <span class="report-info-value">₱@row.TaxAmount.ToString("N2")</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Total Amount</span>
+                                        <span class="report-info-value total-amount">₱@row.TotalAmount.ToString("N2")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (isLoaded)
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-chart-line empty-state-icon"></i>
+                            <p class="empty-state-text">No sales data found for the selected period.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-info-circle empty-state-icon"></i>
+                            <p class="empty-state-text">Select date range and click "Generate Report" to view data.</p>
+                        </div>
+                    }
+                </div>
+
+                @if (reportData.Any() && FilteredReportData.Any())
+                {
+                    <div class="report-summary-footer">
+                        <div class="summary-totals">
+                            <div class="summary-total-item">
+                                <span class="summary-total-label">Total Transactions:</span>
+                                <span class="summary-total-value">@FilteredReportData.Sum(r => r.TransactionCount)</span>
+                            </div>
+                            <div class="summary-total-item">
+                                <span class="summary-total-label">Total Subtotal:</span>
+                                <span class="summary-total-value">₱@FilteredReportData.Sum(r => r.Subtotal).ToString("N2")</span>
+                            </div>
+                            <div class="summary-total-item">
+                                <span class="summary-total-label">Total Tax:</span>
+                                <span class="summary-total-value">₱@FilteredReportData.Sum(r => r.TaxAmount).ToString("N2")</span>
+                            </div>
+                            <div class="summary-total-item">
+                                <span class="summary-total-label">Grand Total:</span>
+                                <span class="summary-total-value grand-total">₱@FilteredReportData.Sum(r => r.TotalAmount).ToString("N2")</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    </div>
+    }
+}
+
+@code {
+    // Check if user can access reports
+    // Only Inventory Manager and Administrator can access
+    private bool CanAccessReports()
+    {
+        if (AuthService == null)
+            return false;
+
+        string userRole = (AuthService.CurrentUserRoleName ?? "").Trim();
+        return userRole.Equals("Inventory Manager", StringComparison.OrdinalIgnoreCase) ||
+               userRole.Equals("Administrator", StringComparison.OrdinalIgnoreCase);
+    }
+    private DateTime startDate = DateTime.Now.AddDays(-30);
+    private DateTime endDate = DateTime.Now;
+    private string groupBy = "Day";
+    private string selectedPreset = "last30";
+    private List<SalesSummaryReportModel> reportData = new List<SalesSummaryReportModel>();
+    private string errorMessage = "";
+    private bool isLoaded = false;
+    
+    // Search and Sort
+    private string searchTerm = "";
+    private string sortColumn = "Period";
+    private string sortDirection = "asc";
+    
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+    }
+
+    private async Task LoadReport()
+    {
+        try
+        {
+            errorMessage = "";
+            isLoaded = false;
+            StateHasChanged();
+
+            if (startDate > endDate)
+            {
+                errorMessage = "Start date cannot be greater than end date.";
+                return;
+            }
+
+            reportData = await ReportService.GetSalesSummaryReportAsync(startDate, endDate, groupBy);
+            isLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading report: {ex.Message}";
+            Console.WriteLine($"Error loading sales summary report: {ex}");
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportToPdf()
+    {
+        if (!reportData.Any())
+            return;
+
+        try
+        {
+            // Generate report number
+            var reportNumber = $"SR-{DateTime.Now:yyyyMMdd}-{DateTime.Now:HHmmss}";
+            var generatedDate = DateTime.Now.ToString("dd.MM.yyyy");
+            var startDateStr = startDate.ToString("dd.MM.yyyy");
+            var endDateStr = endDate.ToString("dd.MM.yyyy");
+            
+            await JSRuntime.InvokeVoidAsync("pdfExport.exportSalesSummaryToPdf", 
+                "report-table",
+                reportNumber,
+                generatedDate,
+                startDateStr,
+                endDateStr,
+                groupBy,
+                $"SalesSummary_Report_{DateTime.Now:yyyyMMdd_HHmmss}.pdf");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error exporting PDF: {ex.Message}";
+            Console.WriteLine($"Error exporting PDF: {ex}");
+            StateHasChanged();
+        }
+    }
+
+    private void ClearError()
+    {
+        errorMessage = "";
+    }
+
+    private void OnStartDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            startDate = date;
+        }
+        selectedPreset = "custom";
+        StateHasChanged();
+    }
+
+    private void OnEndDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            endDate = date;
+        }
+        selectedPreset = "custom";
+        StateHasChanged();
+    }
+
+    private void SetDatePreset(string preset)
+    {
+        selectedPreset = preset;
+        var now = DateTime.Now;
+        
+        switch (preset)
+        {
+            case "today":
+                startDate = now.Date;
+                endDate = now.Date;
+                break;
+            case "last7":
+                startDate = now.AddDays(-7).Date;
+                endDate = now.Date;
+                break;
+            case "last30":
+                startDate = now.AddDays(-30).Date;
+                endDate = now.Date;
+                break;
+            case "thismonth":
+                startDate = new DateTime(now.Year, now.Month, 1);
+                endDate = now.Date;
+                break;
+            case "lastmonth":
+                var firstDayLastMonth = new DateTime(now.Year, now.Month, 1).AddMonths(-1);
+                var lastDayLastMonth = firstDayLastMonth.AddMonths(1).AddDays(-1);
+                startDate = firstDayLastMonth;
+                endDate = lastDayLastMonth;
+                break;
+            case "thisyear":
+                startDate = new DateTime(now.Year, 1, 1);
+                endDate = now.Date;
+                break;
+            case "custom":
+                // Keep current dates
+                break;
+        }
+        
+        StateHasChanged();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+        {
+            sortDirection = sortDirection == "asc" ? "desc" : "asc";
+        }
+        else
+        {
+            sortColumn = column;
+            sortDirection = "asc";
+        }
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private IEnumerable<SalesSummaryReportModel> FilteredReportData
+    {
+        get
+        {
+            var filtered = reportData.AsEnumerable();
+
+            if (!string.IsNullOrEmpty(searchTerm))
+            {
+                filtered = filtered.Where(r => 
+                    r.Period.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Sort
+            switch (sortColumn)
+            {
+                case "Period":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.Period) 
+                        : filtered.OrderByDescending(r => r.Period);
+                    break;
+                case "TransactionCount":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.TransactionCount) 
+                        : filtered.OrderByDescending(r => r.TransactionCount);
+                    break;
+                case "Subtotal":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.Subtotal) 
+                        : filtered.OrderByDescending(r => r.Subtotal);
+                    break;
+                case "TaxAmount":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.TaxAmount) 
+                        : filtered.OrderByDescending(r => r.TaxAmount);
+                    break;
+                case "TotalAmount":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.TotalAmount) 
+                        : filtered.OrderByDescending(r => r.TotalAmount);
+                    break;
+            }
+
+            return filtered;
+        }
+    }
+
+    private IEnumerable<SalesSummaryReportModel> PaginatedReportData
+    {
+        get
+        {
+            var filtered = FilteredReportData.ToList();
+            return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
+        }
+    }
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+    {
+        pageSize = newPageSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+}
+

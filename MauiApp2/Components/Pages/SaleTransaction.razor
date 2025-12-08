@@ -1,0 +1,827 @@
+@page "/sale-transaction"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Models
+@using TaxModel = MauiApp2.Models.Tax
+@using CategoryModel = MauiApp2.Models.Category
+@using BrandModel = MauiApp2.Models.Brand
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject IProductService ProductService
+@inject ITaxService TaxService
+@inject ISalesOrderService SalesOrderService
+@inject ICategoryService CategoryService
+@inject IBrandService BrandService
+
+<link href="css/pagination.css" rel="stylesheet" />
+
+@if (!CanAccessSales())
+{
+    <div class="dashboard-wrapper">
+        <Sidebar />
+        <div class="main-content">
+            <div class="content-header">
+                <h1>Access Denied</h1>
+                <p>You do not have permission to access this page.</p>
+                <p>Only Cashier and Administrator roles can access Sales Transaction.</p>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="dashboard-wrapper">
+        <Sidebar />
+        <div class="main-content">
+            <div class="content-header">
+                <div class="header-logo">
+                    <img src="images/quad2.png" alt="QuadTech Logo" class="sales-logo" />
+                </div>
+                <h1>Sales Transaction</h1>
+            </div>
+
+        <div class="sales-container">
+            <!-- Alert Messages -->
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-error">
+                    <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                    <span>@errorMessage</span>
+                    <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(successMessage))
+            {
+                <div class="alert alert-success">
+                    <span class="alert-icon"><i class="fas fa-check-circle"></i></span>
+                    <span>@successMessage</span>
+                    <button class="alert-close" @onclick="ClearSuccess"><i class="fas fa-times"></i></button>
+                </div>
+            }
+
+            <div class="sales-layout">
+                <!-- Left Side: Product Search, Filters, and Product Details -->
+                <div class="sales-left">
+                    <!-- Search and Filters -->
+                    <div class="sales-card">
+                        <h3>Search & Filter Products</h3>
+                        
+                        <div class="form-group">
+                            <label>Search Product (Name or SKU)</label>
+                            <div class="search-container">
+                                <input type="text" class="form-control search-input" 
+                                       placeholder="Enter product name or SKU..." 
+                                       value="@searchQuery" @oninput="OnSearchInput" />
+                                <button class="btn-search" @onclick="SearchProducts">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Filter by Category</label>
+                                <select class="form-control" value="@selectedCategoryId" @onchange="OnCategoryFilterChanged">
+                                    <option value="0">All Categories</option>
+                                    @foreach (var category in availableCategories)
+                                    {
+                                        <option value="@category.category_id">@category.category_name</option>
+                                    }
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Filter by Brand</label>
+                                <select class="form-control" value="@selectedBrandId" @onchange="OnBrandFilterChanged">
+                                    <option value="0">All Brands</option>
+                                    @foreach (var brand in availableBrands)
+                                    {
+                                        <option value="@brand.brand_id">@brand.brand_name</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Product Grid -->
+                    <div class="sales-card product-grid-section">
+                        <h3>Available Products</h3>
+                        
+                        <div class="product-grid">
+                            @if (FilteredProducts.Any())
+                            {
+                                @foreach (var product in FilteredProducts)
+                                {
+                                    var productQuantity = GetProductQuantity(product.product_id);
+                                    var canAddToCart = productQuantity > 0 && productQuantity <= (product.quantity ?? 0);
+                                    
+                                    <div class="product-card">
+                                        <div class="product-card-header">
+                                            <div class="product-card-name">@product.product_name</div>
+                                            <div class="product-card-price">₱@product.sell_price.ToString("N2")</div>
+                                        </div>
+                                        
+                                        <div class="product-card-body">
+                                            <div class="product-card-detail">
+                                                <span class="detail-label">SKU:</span>
+                                                <span class="detail-value">@product.product_sku</span>
+                                            </div>
+                                            
+                                            @if (!string.IsNullOrEmpty(product.model_number))
+                                            {
+                                                <div class="product-card-detail">
+                                                    <span class="detail-label">Model:</span>
+                                                    <span class="detail-value">@product.model_number</span>
+                                                </div>
+                                            }
+                                            
+                                            <div class="product-card-detail">
+                                                <span class="detail-label">Category:</span>
+                                                <span class="detail-value">@(GetCategoryName(product.category_id) ?? "N/A")</span>
+                                            </div>
+                                            
+                                            <div class="product-card-detail">
+                                                <span class="detail-label">Brand:</span>
+                                                <span class="detail-value">@(GetBrandName(product.brand_id) ?? "N/A")</span>
+                                            </div>
+                                            
+                                            <div class="product-card-detail">
+                                                <span class="detail-label">Stock:</span>
+                                                <span class="detail-value @((product.quantity ?? 0) <= 5 ? "low-stock" : "")">
+                                                    @(product.quantity ?? 0) units
+                                                </span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="product-card-footer">
+                                            <div class="quantity-controls">
+                                                <label class="quantity-label">Quantity:</label>
+                                                <div class="quantity-input-group">
+                                                    <button class="btn-quantity" @onclick="() => DecreaseQuantity(product.product_id)" 
+                                                            disabled="@(productQuantity <= 1)">
+                                                        <i class="fas fa-minus"></i>
+                                                    </button>
+                                                    <input type="number" class="quantity-input" 
+                                                           value="@productQuantity" 
+                                                           @onchange="(e) => UpdateQuantity(product.product_id, e)"
+                                                           min="1" max="@(product.quantity ?? 0)" />
+                                                    <button class="btn-quantity" @onclick="() => IncreaseQuantity(product.product_id)" 
+                                                            disabled="@(productQuantity >= (product.quantity ?? 0))">
+                                                        <i class="fas fa-plus"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            
+                                            <button class="btn-add-to-cart-card" @onclick="() => AddToCartFromCard(product, productQuantity)" 
+                                                    disabled="@(!canAddToCart || productQuantity <= 0)">
+                                                <i class="fas fa-shopping-cart"></i> Add to Cart
+                                            </button>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="no-products">
+                                    <i class="fas fa-box-open"></i>
+                                    <p>No products found. Try adjusting your search or filters.</p>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Side: Cart and Payment -->
+                <div class="sales-right">
+                    <!-- Cart Section -->
+                    <div class="sales-card cart-section">
+                        <h3>Shopping Cart</h3>
+                        
+                        @if (cartItems.Any())
+                        {
+                            <div class="cart-items">
+                                <table class="cart-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Product</th>
+                                            <th>Qty</th>
+                                            <th>Price</th>
+                                            <th>Subtotal</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in cartItems)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <div class="cart-product-name">@item.product_name</div>
+                                                    <div class="cart-product-sku">@item.product_sku</div>
+                                                </td>
+                                                <td>@item.quantity</td>
+                                                <td>₱@item.unit_price.ToString("N2")</td>
+                                                <td>₱@item.subtotal.ToString("N2")</td>
+                                                <td>
+                                                    <button class="btn-remove" @onclick="() => RemoveFromCart(item.product_id)">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="cart-totals">
+                                <div class="total-row">
+                                    <span class="total-label">Subtotal:</span>
+                                    <span class="total-value">₱@cartSubtotal.ToString("N2")</span>
+                                </div>
+                                <div class="total-row total-row-grand">
+                                    <span class="total-label">Total:</span>
+                                    <span class="total-value">₱@cartTotal.ToString("N2")</span>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="empty-cart">
+                                <i class="fas fa-shopping-cart"></i>
+                                <p>Cart is empty. Select a product and add it to cart.</p>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Cart Actions -->
+                    <div class="sales-card payment-section">
+                        <div class="payment-summary">
+                            <div class="summary-item">
+                                <span>Subtotal:</span>
+                                <span>₱@cartSubtotal.ToString("N2")</span>
+                            </div>
+                            <div class="summary-item summary-total">
+                                <span>Total Amount:</span>
+                                <span>₱@cartTotal.ToString("N2")</span>
+                            </div>
+                        </div>
+
+                        <button class="btn-proceed-payment" @onclick="ShowPaymentModal" 
+                                disabled="@(!cartItems.Any() || isSubmitting)">
+                            <i class="fas fa-credit-card"></i>
+                            <span>Proceed to Payment</span>
+                        </button>
+
+                        <button class="btn-clear-cart" @onclick="ClearCart" disabled="@(!cartItems.Any())">
+                            <i class="fas fa-trash"></i> Clear Cart
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Modal -->
+@if (showPaymentModal)
+{
+    <div class="modal-overlay" @onclick:stopPropagation="true">
+        <div class="modal-content payment-modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Payment Information</h3>
+                <button class="modal-close" @onclick="ClosePaymentModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="payment-form">
+                    <div class="form-group">
+                        <label>Payment Method *</label>
+                        <select class="form-control" @bind="paymentMethod">
+                            <option value="">-- Select Payment Method --</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Card">Card</option>
+                            <option value="GCash">GCash</option>
+                            <option value="PayMaya">PayMaya</option>
+                            <option value="Bank Transfer">Bank Transfer</option>
+                        </select>
+                        @if (HasError("PaymentMethod"))
+                        {
+                            <span class="field-error">Please select a payment method</span>
+                        }
+                    </div>
+
+                    <div class="form-group">
+                        <label>Sale Date *</label>
+                        <input type="datetime-local" class="form-control" @bind="saleDate" />
+                    </div>
+
+                    <div class="payment-summary-modal">
+                        <div class="summary-item">
+                            <span>Subtotal:</span>
+                            <span>₱@cartSubtotal.ToString("N2")</span>
+                        </div>
+                        <div class="summary-item summary-total">
+                            <span>Total Amount:</span>
+                            <span>₱@cartTotal.ToString("N2")</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="ClosePaymentModal">Cancel</button>
+                <button class="btn-complete-sale" @onclick="ShowCompleteSaleConfirmation" 
+                        disabled="@(isSubmitting || string.IsNullOrEmpty(paymentMethod))">
+                    @if (isSubmitting)
+                    {
+                        <span>Processing...</span>
+                    }
+                    else
+                    {
+                        <i class="fas fa-check-circle"></i>
+                        <span>Complete Sale</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+    }
+}
+
+<!-- Confirmation Modal for Complete Sale -->
+@if (showCompleteSaleConfirmation)
+{
+    <div class="modal-overlay confirmation-modal-overlay" @onclick:stopPropagation="true">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header confirmation-modal-header">
+                <h3>Confirm Complete Sale</h3>
+                <button class="modal-close" @onclick="CloseCompleteSaleConfirmation"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body confirmation-modal-body">
+                <div class="confirmation-message-box">
+                    <p class="confirmation-question">Are you sure you want to complete this sale?</p>
+                </div>
+                <div class="confirmation-details">
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Total Items:</span>
+                        <span class="confirmation-value">@cartItems.Count</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Subtotal:</span>
+                        <span class="confirmation-value">₱@cartSubtotal.ToString("N2")</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Total Amount:</span>
+                        <span class="confirmation-value total-amount">₱@cartTotal.ToString("N2")</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Payment Method:</span>
+                        <span class="confirmation-value">@paymentMethod</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Sale Date:</span>
+                        <span class="confirmation-value">@saleDate.ToString("MM/dd/yyyy")</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer confirmation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCompleteSaleConfirmation">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmCompleteSale">Confirm Sale</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // Check if user can access sales transactions
+    // Only Cashier and Administrator can access (Inventory Manager excluded for separation of duties)
+    private bool CanAccessSales()
+    {
+        if (AuthService == null)
+            return false;
+
+        string userRole = (AuthService.CurrentUserRoleName ?? "").Trim();
+        return userRole.Equals("Cashier", StringComparison.OrdinalIgnoreCase) ||
+               userRole.Equals("Administrator", StringComparison.OrdinalIgnoreCase);
+    }
+    private bool isSubmitting = false;
+    private string errorMessage = "";
+    private string successMessage = "";
+
+    // Data collections
+    private List<Product> availableProducts = new List<Product>();
+    private List<TaxModel> availableTaxes = new List<TaxModel>();
+    private List<CategoryModel> availableCategories = new List<CategoryModel>();
+    private List<BrandModel> availableBrands = new List<BrandModel>();
+
+    // Search and Filter
+    private string searchQuery = "";
+    private int selectedCategoryId = 0;
+    private int selectedBrandId = 0;
+
+    // Product quantities (for each product in the grid)
+    private Dictionary<int, int> productQuantities = new Dictionary<int, int>();
+    private string paymentMethod = "";
+    private DateTime saleDate = DateTime.Now;
+
+    // Modal state
+    private bool showPaymentModal = false;
+    private bool showCompleteSaleConfirmation = false;
+    private List<string> validationErrors = new List<string>();
+
+    // Cart
+    private List<CartItem> cartItems = new List<CartItem>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            // Load categories
+            var categories = await CategoryService.GetCategoriesAsync();
+            availableCategories = categories.ToList();
+
+            // Load brands
+            var brands = await BrandService.GetBrandsAsync();
+            availableBrands = brands.ToList();
+
+            // Load products (only active ones with stock)
+            var allProducts = await ProductService.GetProductsAsync();
+            availableProducts = allProducts
+                .Where(p => p.status == true && (p.quantity ?? 0) > 0)
+                .OrderBy(p => p.product_name)
+                .ToList();
+
+            // Load taxes
+            var taxes = await TaxService.GetTaxesAsync();
+            availableTaxes = taxes.Where(t => t.is_active).ToList();
+
+            // Don't load recent sales anymore
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading data: {ex.Message}";
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private void ShowPaymentModal()
+    {
+        if (!cartItems.Any())
+            return;
+            
+        showPaymentModal = true;
+        validationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private void ClosePaymentModal()
+    {
+        showPaymentModal = false;
+        validationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private bool HasError(string fieldName)
+    {
+        return validationErrors.Any(e => e.Contains(fieldName));
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? "";
+        StateHasChanged();
+    }
+
+    private void SearchProducts()
+    {
+        StateHasChanged();
+    }
+
+    private void OnCategoryFilterChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int categoryId))
+        {
+            selectedCategoryId = categoryId;
+        }
+        else
+        {
+            selectedCategoryId = 0;
+        }
+        StateHasChanged();
+    }
+
+    private void OnBrandFilterChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int brandId))
+        {
+            selectedBrandId = brandId;
+        }
+        else
+        {
+            selectedBrandId = 0;
+        }
+        StateHasChanged();
+    }
+
+    private int GetProductQuantity(int productId)
+    {
+        if (productQuantities.ContainsKey(productId))
+        {
+            return productQuantities[productId];
+        }
+        return 1;
+    }
+
+    private void IncreaseQuantity(int productId)
+    {
+        if (productQuantities.ContainsKey(productId))
+        {
+            productQuantities[productId]++;
+        }
+        else
+        {
+            productQuantities[productId] = 2;
+        }
+        StateHasChanged();
+    }
+
+    private void DecreaseQuantity(int productId)
+    {
+        if (productQuantities.ContainsKey(productId) && productQuantities[productId] > 1)
+        {
+            productQuantities[productId]--;
+        }
+        else
+        {
+            productQuantities[productId] = 1;
+        }
+        StateHasChanged();
+    }
+
+    private void UpdateQuantity(int productId, ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int quantity) && quantity > 0)
+        {
+            productQuantities[productId] = quantity;
+            StateHasChanged();
+        }
+    }
+
+    private void AddToCartFromCard(Product product, int quantity)
+    {
+        if (quantity <= 0)
+            return;
+
+        if (quantity > (product.quantity ?? 0))
+        {
+            errorMessage = $"Cannot add {quantity} units. Only {product.quantity ?? 0} units available in stock.";
+            return;
+        }
+
+        // Check if already in cart
+        var existingItem = cartItems.FirstOrDefault(c => c.product_id == product.product_id);
+        if (existingItem != null)
+        {
+            // Update quantity
+            var newQuantity = existingItem.quantity + quantity;
+            var availableStock = product.quantity ?? 0;
+            
+            if (newQuantity > availableStock)
+            {
+                errorMessage = $"Cannot add more. Only {availableStock} units available in stock.";
+                return;
+            }
+
+            existingItem.quantity = newQuantity;
+            existingItem.unit_price = product.sell_price;
+            existingItem.subtotal = existingItem.quantity * existingItem.unit_price;
+            
+            // Recalculate tax for this item
+            var taxRate = GetTaxRateForProduct(product);
+            existingItem.tax_amount = existingItem.subtotal * taxRate;
+            existingItem.total = existingItem.subtotal + existingItem.tax_amount;
+        }
+        else
+        {
+            // Add new item to cart
+            var subtotal = quantity * product.sell_price;
+            var taxRate = GetTaxRateForProduct(product);
+            var taxAmount = subtotal * taxRate;
+            var total = subtotal + taxAmount;
+
+            cartItems.Add(new CartItem
+            {
+                product_id = product.product_id,
+                product_name = product.product_name,
+                product_sku = product.product_sku,
+                quantity = quantity,
+                unit_price = product.sell_price,
+                subtotal = subtotal,
+                tax_rate = taxRate,
+                tax_amount = taxAmount,
+                total = total
+            });
+        }
+
+        // Reset quantity for this product
+        productQuantities[product.product_id] = 1;
+
+        ClearError();
+        StateHasChanged();
+    }
+
+    private IEnumerable<Product> FilteredProducts
+    {
+        get
+        {
+            var filtered = availableProducts.AsEnumerable();
+
+            // Filter by search query (name or SKU)
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                filtered = filtered.Where(p =>
+                    p.product_name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    p.product_sku.Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Filter by category
+            if (selectedCategoryId > 0)
+            {
+                filtered = filtered.Where(p => p.category_id == selectedCategoryId);
+            }
+
+            // Filter by brand
+            if (selectedBrandId > 0)
+            {
+                filtered = filtered.Where(p => p.brand_id == selectedBrandId);
+            }
+
+            return filtered.OrderBy(p => p.product_name);
+        }
+    }
+
+    private string? GetCategoryName(int? categoryId)
+    {
+        if (!categoryId.HasValue) return null;
+        return availableCategories.FirstOrDefault(c => c.category_id == categoryId.Value)?.category_name;
+    }
+
+    private string? GetBrandName(int? brandId)
+    {
+        if (!brandId.HasValue) return null;
+        return availableBrands.FirstOrDefault(b => b.brand_id == brandId.Value)?.brand_name;
+    }
+
+
+    private void RemoveFromCart(int productId)
+    {
+        cartItems.RemoveAll(c => c.product_id == productId);
+        StateHasChanged();
+    }
+
+    private void ClearCart()
+    {
+        cartItems.Clear();
+        StateHasChanged();
+    }
+
+    private decimal GetTaxRateForProduct(Product product)
+    {
+        if (!product.tax_id.HasValue)
+            return 0;
+
+        var tax = availableTaxes.FirstOrDefault(t => t.tax_id == product.tax_id.Value);
+        return tax?.tax_rate ?? 0;
+    }
+
+    private decimal cartSubtotal => cartItems.Sum(c => c.subtotal);
+    private decimal cartTax => cartItems.Sum(c => c.tax_amount);
+    private decimal cartTotal => cartItems.Sum(c => c.total);
+
+    // Confirmation Modal Methods
+    private void ShowCompleteSaleConfirmation()
+    {
+        validationErrors.Clear();
+        
+        if (!cartItems.Any())
+        {
+            validationErrors.Add("PaymentMethod: Cart is empty");
+            StateHasChanged();
+            return;
+        }
+        
+        if (string.IsNullOrEmpty(paymentMethod))
+        {
+            validationErrors.Add("PaymentMethod: Please select a payment method");
+            StateHasChanged();
+            return;
+        }
+
+        showCompleteSaleConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseCompleteSaleConfirmation()
+    {
+        showCompleteSaleConfirmation = false;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmCompleteSale()
+    {
+        showCompleteSaleConfirmation = false;
+        await CompleteSale();
+    }
+
+    private async Task CompleteSale()
+    {
+        try
+        {
+            isSubmitting = true;
+            ClearError();
+            ClearSuccess();
+            StateHasChanged();
+
+            // Convert cart items to sales order items
+            var salesOrderItems = cartItems.Select(c => new SalesOrderItem
+            {
+                product_id = c.product_id,
+                quantity = c.quantity,
+                unit_price = c.unit_price,
+                tax_rate = c.tax_rate,
+                tax_amount = c.tax_amount,
+                subtotal = c.subtotal,
+                total = c.total
+            }).ToList();
+
+            // Create sales order (this will automatically create stock out)
+            var salesOrderId = await SalesOrderService.CreateSalesOrderAsync(
+                saleDate,
+                paymentMethod,
+                salesOrderItems,
+                AuthService.CurrentUserId
+            );
+
+            // Get the created sales order to show invoice number
+            var createdOrder = await SalesOrderService.GetSalesOrderByIdAsync(salesOrderId);
+            successMessage = $"Sale completed successfully! Invoice: {createdOrder.sales_order_number}";
+            
+            // Clear cart and reset form
+            ClearCart();
+            paymentMethod = "";
+            saleDate = DateTime.Now;
+            
+            // Close modal
+            ClosePaymentModal();
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error completing sale: {ex.Message}";
+            validationErrors.Add($"Error: {ex.Message}");
+        }
+        finally
+        {
+            isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearError()
+    {
+        errorMessage = "";
+    }
+
+    private void ClearSuccess()
+    {
+        successMessage = "";
+    }
+
+    // Helper classes
+    private class CartItem
+    {
+        public int product_id { get; set; }
+        public string product_name { get; set; } = string.Empty;
+        public string product_sku { get; set; } = string.Empty;
+        public int quantity { get; set; }
+        public decimal unit_price { get; set; }
+        public decimal subtotal { get; set; }
+        public decimal tax_rate { get; set; }
+        public decimal tax_amount { get; set; }
+        public decimal total { get; set; }
+    }
+}
+

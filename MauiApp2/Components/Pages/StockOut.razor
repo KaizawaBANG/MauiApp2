@@ -1,0 +1,608 @@
+﻿@page "/stockout"
+@layout MainLayout
+@using MauiApp2.Services
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+
+    <main class="main-content">
+        <div class="content-header">
+            <h1>Inventory Management</h1>
+        </div>
+
+        <div class="stock-out-container">
+            <div class="tab-header">
+                <button class="tab-button active">Stock Out</button>
+            </div>
+
+            <!-- Error Alert -->
+            @if (showError)
+            {
+                <div class="alert alert-error">
+                    <span class="error-icon">⚠️</span>
+                    <span>@errorMessage</span>
+                    <button class="alert-close" @onclick="ClearError">×</button>
+                </div>
+            }
+
+            <!-- Success Alert -->
+            @if (showSuccess)
+            {
+                <div class="alert alert-success">
+                    <span class="success-icon">✅</span>
+                    <span>@successMessage</span>
+                    <button class="alert-close" @onclick="ClearSuccess">×</button>
+                </div>
+            }
+
+            <!-- Add Stock Out Button -->
+            <div class="add-stock-out-section">
+                <button class="btn-add-stock-out-main" @onclick="ShowStockOutModal">
+                    <span class="minus-icon">−</span> Add Stock Out
+                </button>
+            </div>
+
+            <div class="history-section">
+                <div class="history-header">
+                    <h2>Stock Out History Table</h2>
+                </div>
+
+                <div class="history-controls">
+                    <div class="sort-control">
+                        <span class="calendar-icon">📅</span>
+                        <input type="date" class="form-control date-input" @bind="filterDate" />
+                    </div>
+                    <div class="search-control">
+                        <input type="text" class="form-control search-input" placeholder="Enter product name or id" value="@searchTerm" @oninput="OnSearchInput" />
+                        <button class="btn-search" @onclick="SearchStockOutHistory">🔎︎</button>
+                    </div>
+                </div>
+
+                <div class="history-table-wrapper">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Product ID</th>
+                                <th>Product Name</th>
+                                <th>Brand</th>
+                                <th>Category</th>
+                                <th>Date Removed</th>
+                                <th>Quantity Removed</th>
+                                <th>Reason</th>
+                                <th>Processed By</th>
+                                <th>Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (PaginatedStockOut?.Any() == true)
+                            {
+                                @foreach (var record in PaginatedStockOut)
+                                {
+                                    <tr>
+                                        <td>@record.ProductId</td>
+                                        <td>@record.ProductName</td>
+                                        <td>@record.Brand</td>
+                                        <td>@record.Category</td>
+                                        <td>@record.DateRemoved.ToString("MM/dd/yyyy")</td>
+                                        <td>@record.QuantityRemoved</td>
+                                        <td>
+                                            <span class="reason-badge reason-@record.Reason">@GetReasonDisplayName(record.Reason)</span>
+                                        </td>
+                                        <td>@record.ProcessedBy</td>
+                                        <td>@record.Remarks</td>
+                                    </tr>
+                                }
+                            }
+                            else
+                            {
+                                <tr>
+                                    <td colspan="9" class="no-data">No stock out records found</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                @if (FilteredStockOut.Any())
+                {
+                    <Pagination CurrentPage="@currentPage"
+                                PageSize="@pageSize"
+                                TotalItems="@FilteredStockOut.Count()"
+                                PageChanged="@OnPageChanged"
+                                PageSizeChanged="@OnPageSizeChanged" />
+                }
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Stock Out Modal -->
+@if (showStockOutModal)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Add Stock Out</h3>
+                <button class="modal-close" @onclick="CloseModal">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="stock-out-form">
+                    <!-- Validation Errors -->
+                    @if (validationErrors?.Any() == true)
+                    {
+                        <div class="validation-errors">
+                            <h4>Please fix the following errors:</h4>
+                            <ul>
+                                @foreach (var error in validationErrors)
+                                {
+                                    <li>@error</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label>Product <span class="required">*</span></label>
+                            <select class="form-control @(HasError("Product") ? "error" : "")" @bind="selectedProductId">
+                                <option value="">Select or product to stock out</option>
+                                @foreach (var product in products)
+                                {
+                                    <option value="@product.Id">@product.Name - @product.Brand (@product.Category) - Stock: @product.CurrentStock</option>
+                                }
+                            </select>
+                            @if (HasError("Product"))
+                            {
+                                <span class="field-error">Please select a product</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Quantity <span class="required">*</span></label>
+                            <input type="number" class="form-control @(HasError("Quantity") ? "error" : "")"
+                                   @bind="quantity" placeholder="Quantity To Remove" min="1" />
+                            @if (HasError("Quantity"))
+                            {
+                                <span class="field-error">Quantity must be greater than 0</span>
+                            }
+                            @if (selectedProductId != "" && quantity > 0)
+                            {
+                                var product = products.FirstOrDefault(p => p.Id == selectedProductId);
+                                if (product != null && quantity > product.CurrentStock)
+                                {
+                                    <span class="field-error warning">Warning: Quantity exceeds current stock (@product.CurrentStock available)</span>
+                                }
+                            }
+                        </div>
+                        <div class="form-group">
+                            <label>Reason <span class="required">*</span></label>
+                            <select class="form-control @(HasError("Reason") ? "error" : "")" @bind="selectedReason">
+                                <option value="">Reason For Stock Out</option>
+                                <option value="sale">Sale</option>
+                                <option value="damaged">Damaged</option>
+                                <option value="expired">Expired</option>
+                                <option value="transfer">Transfer</option>
+                                <option value="other">Other</option>
+                            </select>
+                            @if (HasError("Reason"))
+                            {
+                                <span class="field-error">Please select a reason</span>
+                            }
+                        </div>
+                        <div class="form-group">
+                            <label>Date <span class="required">*</span></label>
+                            <div class="date-input-wrapper">
+                                <span class="calendar-icon">📅</span>
+                                <input type="date" class="form-control date-input @(HasError("Date") ? "error" : "")"
+                                       @bind="stockOutDate" max="@DateTime.Now.ToString("yyyy-MM-dd")" />
+                            </div>
+                            @if (HasError("Date"))
+                            {
+                                <span class="field-error">Date cannot be in the future</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group remarks-group">
+                            <label>Remarks/Notes (Optional)</label>
+                            <textarea class="form-control" @bind="remarks" placeholder="Remarks/Notes (Optional)" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="CloseModal">Cancel</button>
+                <button class="btn-submit btn-submit-red" @onclick="ShowSubmitStockOutConfirmation" disabled="@isSubmitting">
+                    @if (isSubmitting)
+                    {
+                        <span>Processing...</span>
+                    }
+                    else
+                    {
+                        <span>Stock Out</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Confirmation Modal for Stock Out -->
+@if (showSubmitStockOutConfirmation)
+{
+    <div class="modal-overlay" @onclick="CloseSubmitStockOutConfirmation">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Confirm Stock Out</h3>
+                <button class="modal-close" @onclick="CloseSubmitStockOutConfirmation">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning" style="margin-bottom: 20px;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Are you sure you want to process this stock out?</span>
+                </div>
+                <div style="padding: 15px; background-color: #f9fafb; border-radius: 8px; margin-bottom: 15px;">
+                    <p><strong>Product:</strong> @(products.FirstOrDefault(p => p.Id == selectedProductId)?.Name ?? "N/A")</p>
+                    <p><strong>Quantity:</strong> @quantity</p>
+                    <p><strong>Reason:</strong> @selectedReason</p>
+                    <p><strong>Date:</strong> @stockOutDate.ToString("MM/dd/yyyy")</p>
+                    @if (!string.IsNullOrWhiteSpace(remarks))
+                    {
+                        <p><strong>Remarks:</strong> @remarks</p>
+                    }
+                </div>
+                <p style="color: #6b7280; font-size: 0.875rem;">This action will reduce the inventory quantity.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="CloseSubmitStockOutConfirmation">Cancel</button>
+                <button class="btn-submit btn-submit-red" @onclick="ConfirmSubmitStockOut">Confirm Stock Out</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isInventoryMenuOpen = true;
+    private bool showStockOutModal = false;
+    private bool showSubmitStockOutConfirmation = false;
+    private bool isSubmitting = false;
+    private bool showError = false;
+    private bool showSuccess = false;
+
+    // Form fields
+    private string selectedProductId = "";
+    private string selectedReason = "";
+    private int quantity = 0;
+    private DateTime stockOutDate = DateTime.Now;
+    private string remarks = "";
+    private string errorMessage = "";
+    private string successMessage = "";
+    private List<string> validationErrors = new List<string>();
+
+    // Filter fields
+    private DateTime? filterDate = null;
+    private string searchTerm = "";
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+
+    // Data collections (loaded from database)
+    private List<Product> products = new List<Product>();
+    private List<StockOutRecord> stockOutHistory = new List<StockOutRecord>();
+
+    protected override void OnInitialized()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+        // Data will be loaded from database when services are implemented
+    }
+
+    private void ToggleInventoryMenu()
+    {
+        isInventoryMenuOpen = !isInventoryMenuOpen;
+    }
+
+    private void ShowStockOutModal()
+    {
+        showStockOutModal = true;
+        ClearValidationErrors();
+        StateHasChanged();
+    }
+
+    private void CloseModal()
+    {
+        showStockOutModal = false;
+        ResetForm();
+        ClearValidationErrors();
+        StateHasChanged();
+    }
+
+    private void ResetForm()
+    {
+        selectedProductId = "";
+        selectedReason = "";
+        quantity = 0;
+        stockOutDate = DateTime.Now;
+        remarks = "";
+        isSubmitting = false;
+    }
+
+    private void ClearValidationErrors()
+    {
+        validationErrors.Clear();
+    }
+
+    private void ClearError()
+    {
+        showError = false;
+        errorMessage = "";
+    }
+
+    private void ClearSuccess()
+    {
+        showSuccess = false;
+        successMessage = "";
+    }
+
+    private bool HasError(string fieldName)
+    {
+        return validationErrors.Any(e => e.Contains(fieldName));
+    }
+
+    private List<string> ValidateForm()
+    {
+        var errors = new List<string>();
+
+        if (string.IsNullOrEmpty(selectedProductId))
+            errors.Add("Product: Please select a product");
+
+        if (quantity <= 0)
+            errors.Add("Quantity: Quantity must be greater than 0");
+
+        if (string.IsNullOrEmpty(selectedReason))
+            errors.Add("Reason: Please select a reason");
+
+        if (stockOutDate > DateTime.Now)
+            errors.Add("Date: Stock out date cannot be in the future");
+
+        // Check stock availability
+        if (!string.IsNullOrEmpty(selectedProductId) && quantity > 0)
+        {
+            var product = products.FirstOrDefault(p => p.Id == selectedProductId);
+            if (product != null && quantity > product.CurrentStock)
+            {
+                errors.Add($"Quantity: Cannot remove {quantity} units. Only {product.CurrentStock} units available in stock.");
+            }
+        }
+
+        return errors;
+    }
+
+    // Confirmation Modal Methods
+    private void ShowSubmitStockOutConfirmation()
+    {
+        ClearValidationErrors();
+        ClearError();
+        ClearSuccess();
+        StateHasChanged();
+
+        validationErrors = ValidateForm();
+
+        if (validationErrors.Any())
+        {
+            StateHasChanged();
+            return;
+        }
+
+        showSubmitStockOutConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseSubmitStockOutConfirmation()
+    {
+        showSubmitStockOutConfirmation = false;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmSubmitStockOut()
+    {
+        showSubmitStockOutConfirmation = false;
+        await SubmitStockOut();
+    }
+
+    private async Task SubmitStockOut()
+    {
+        try
+        {
+            isSubmitting = true;
+            ClearValidationErrors();
+            ClearError();
+            ClearSuccess();
+            StateHasChanged();
+
+            // Validate form
+            validationErrors = ValidateForm();
+
+            if (validationErrors.Any())
+            {
+                StateHasChanged();
+                return;
+            }
+
+            // Simulate API call delay
+            await Task.Delay(1000);
+
+            // Create new stock out record
+            var product = products.FirstOrDefault(p => p.Id == selectedProductId);
+
+            if (product == null)
+            {
+                ShowError("Invalid product selected");
+                return;
+            }
+
+            var newRecord = new StockOutRecord
+            {
+                ProductId = selectedProductId,
+                ProductName = product.Name,
+                Brand = product.Brand,
+                Category = product.Category,
+                DateRemoved = stockOutDate,
+                QuantityRemoved = quantity,
+                Reason = selectedReason,
+                ProcessedBy = "Current User",
+                Remarks = remarks
+            };
+
+            // Add to history
+            stockOutHistory.Insert(0, newRecord);
+
+            // Update product stock (in real app, this would be an API call)
+            product.CurrentStock -= quantity;
+
+            // Show success message
+            ShowSuccess($"Successfully removed {quantity} units of {product.Name} from stock");
+
+            // Close modal and reset form
+            CloseModal();
+
+            // Refresh the table
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            ShowError($"An error occurred while processing stock out: {ex.Message}");
+        }
+        finally
+        {
+            isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowError(string message)
+    {
+        errorMessage = message;
+        showError = true;
+        StateHasChanged();
+    }
+
+    private void ShowSuccess(string message)
+    {
+        successMessage = message;
+        showSuccess = true;
+        StateHasChanged();
+    }
+
+    private void SearchStockOutHistory()
+    {
+        currentPage = 1; // Reset to first page when searching
+        StateHasChanged();
+    }
+
+    private IEnumerable<StockOutRecord> FilteredStockOut
+    {
+        get
+        {
+            var filtered = stockOutHistory.AsEnumerable();
+
+            if (filterDate.HasValue)
+            {
+                filtered = filtered.Where(s => s.DateRemoved.Date == filterDate.Value.Date);
+            }
+
+            if (!string.IsNullOrEmpty(searchTerm))
+            {
+                filtered = filtered.Where(s =>
+                    s.ProductId.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    s.ProductName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    s.Brand.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    s.Category.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return filtered.OrderByDescending(s => s.DateRemoved);
+        }
+    }
+
+    private IEnumerable<StockOutRecord> PaginatedStockOut
+    {
+        get
+        {
+            var filtered = FilteredStockOut.ToList();
+            return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
+        }
+    }
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+    {
+        pageSize = newPageSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? "";
+        currentPage = 1;
+    }
+
+    private string GetReasonDisplayName(string reason)
+    {
+        return reason switch
+        {
+            "sale" => "Sale",
+            "damaged" => "Damaged",
+            "expired" => "Expired",
+            "transfer" => "Transfer",
+            "other" => "Other",
+            _ => reason
+        };
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/");
+    }
+
+    // Helper classes
+    private class Product
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Brand { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public int CurrentStock { get; set; }
+    }
+
+    private class StockOutRecord
+    {
+        public string ProductId { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+        public string Brand { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public DateTime DateRemoved { get; set; }
+        public int QuantityRemoved { get; set; }
+        public string Reason { get; set; } = string.Empty;
+        public string ProcessedBy { get; set; } = string.Empty;
+        public string Remarks { get; set; } = string.Empty;
+    }
+}

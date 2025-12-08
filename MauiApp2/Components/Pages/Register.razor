@@ -1,0 +1,170 @@
+﻿@page "/register"
+@using Microsoft.AspNetCore.Components.Forms
+@using System.ComponentModel.DataAnnotations
+@inject NavigationManager Navigation
+
+<div class="register-container">
+    <div class="register-wrapper">
+        <div class="register-card">
+            <div class="register-header">
+                <div class="logo-container">
+                    <img src="images/quad.png" alt="QuadTech Logo" class="logo" />
+                </div>
+                <h1 class="company-name">
+                    <span class="quad">Quad</span><span class="tech">Tech</span>
+                </h1>
+            </div>
+
+            <EditForm Model="@registerModel" OnValidSubmit="HandleValidSubmit">
+                <DataAnnotationsValidator />
+
+                @if (showErrorMessage)
+                {
+                    <div class="register-error-message">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 0C3.58 0 0 3.58 0 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm1 13H7v-2h2v2zm0-3H7V4h2v6z" />
+                        </svg>
+                        @errorMessage
+                    </div>
+                }
+
+                <div class="form-group">
+                    <div class="input-wrapper @(showErrorMessage && string.IsNullOrEmpty(registerModel.FullName) ? "input-error" : "")">
+                        <span class="input-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                        </span>
+                        <InputText id="fullName" @bind-Value="registerModel.FullName" class="form-control" placeholder="Full Name" />
+                    </div>
+                    <ValidationMessage For="@(() => registerModel.FullName)" class="error-message" />
+                </div>
+
+                <div class="form-group">
+                    <div class="input-wrapper @(showErrorMessage && string.IsNullOrEmpty(registerModel.Email) ? "input-error" : "")">
+                        <span class="input-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                            </svg>
+                        </span>
+                        <InputText id="email" @bind-Value="registerModel.Email" class="form-control" placeholder="Email address" />
+                    </div>
+                    <ValidationMessage For="@(() => registerModel.Email)" class="error-message" />
+                </div>
+
+                <div class="form-group">
+                    <div class="input-wrapper @(showErrorMessage && string.IsNullOrEmpty(registerModel.Password) ? "input-error" : "")">
+                        <span class="input-icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="5" y="11" width="14" height="10" rx="2" ry="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                            </svg>
+                        </span>
+                        <InputText id="password" @bind-Value="registerModel.Password" type="password" class="form-control" placeholder="Password" />
+                    </div>
+                    <ValidationMessage For="@(() => registerModel.Password)" class="error-message" />
+                </div>
+
+                <div class="form-group">
+                    <div class="input-wrapper @(showErrorMessage && string.IsNullOrEmpty(registerModel.ConfirmPassword) ? "input-error" : "")">
+                        <span class="input-icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="5" y="11" width="14" height="10" rx="2" ry="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                            </svg>
+                        </span>
+                        <InputText id="confirmPassword" @bind-Value="registerModel.ConfirmPassword" type="password" class="form-control" placeholder="Confirm Password" />
+                    </div>
+                    <ValidationMessage For="@(() => registerModel.ConfirmPassword)" class="error-message" />
+                </div>
+
+                <button type="submit" class="register-btn @(isLoading ? "loading" : "")" disabled="@isLoading">
+                    @(isLoading ? "Creating account..." : "Register")
+                </button>
+
+                @if (showSuccessMessage)
+                {
+                    <div class="success-message">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 0C3.58 0 0 3.58 0 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm-1 12L3 8l1.41-1.41L7 9.17l4.59-4.58L13 6l-6 6z" />
+                        </svg>
+                        Registration successful! Redirecting to login...
+                    </div>
+                }
+            </EditForm>
+        </div>
+
+        <div class="login-card">
+            Already have an account?
+            <button class="login-link" @onclick="NavigateToLogin">Log in</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private RegisterModel registerModel = new RegisterModel();
+    private bool showSuccessMessage = false;
+    private bool showErrorMessage = false;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+
+    private async Task HandleValidSubmit()
+    {
+        try
+        {
+            isLoading = true;
+            showErrorMessage = false;
+            StateHasChanged();
+
+            // Simulate API call
+            await Task.Delay(1500);
+
+            // Here you would typically call your registration API
+            // For now, we'll simulate a successful registration
+            showSuccessMessage = true;
+            StateHasChanged();
+
+            // Wait 2 seconds then redirect to login
+            await Task.Delay(2000);
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception)
+        {
+            showErrorMessage = true;
+            errorMessage = "Registration failed. Please try again.";
+            showSuccessMessage = false;
+            StateHasChanged();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void NavigateToLogin()
+    {
+        Navigation.NavigateTo("/login");
+    }
+
+    public class RegisterModel
+    {
+        [Required(ErrorMessage = "Full name is required")]
+        [StringLength(50, ErrorMessage = "Full name is too long")]
+        public string FullName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Email is required")]
+        [EmailAddress(ErrorMessage = "Invalid email address")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Password is required")]
+        [MinLength(6, ErrorMessage = "Password must be at least 6 characters")]
+        public string Password { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Please confirm your password")]
+        [Compare(nameof(Password), ErrorMessage = "Passwords do not match")]
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

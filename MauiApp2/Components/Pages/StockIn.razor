@@ -1,0 +1,1846 @@
+﻿@page "/purchase-orders"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Models
+@using SupplierModel = MauiApp2.Models.Supplier
+@using TaxModel = MauiApp2.Models.Tax
+@using Microsoft.JSInterop
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject ISupplierService SupplierService
+@inject IProductService ProductService
+@inject IPurchaseOrderService PurchaseOrderService
+@inject ITaxService TaxService
+@inject IJSRuntime JSRuntime
+
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+    <div class="main-content">
+        <div class="content-header">
+            <h1>Purchase Order Management</h1>
+        </div>
+
+        <div class="inventory-section">
+            <div class="tab-section">
+                <div class="tabs">
+                    <button class="tab active">Create Purchase Order</button>
+                </div>
+            </div>
+
+            <div class="product-table-container">
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(successMessage))
+                {
+                    <div class="alert alert-success">
+                        <span class="alert-icon"><i class="fas fa-check-circle"></i></span>
+                        <span>@successMessage</span>
+                        <button class="alert-close" @onclick="ClearSuccess"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                <!-- Date Filters -->
+                <div class="filter-section">
+                    <div class="filter-group">
+                        <label>Date Range</label>
+                        <div class="date-range-filters">
+                            <input type="date" class="form-control" value="@(startDate?.ToString("yyyy-MM-dd") ?? "")" @onchange="OnStartDateChange" />
+                            <span>to</span>
+                            <input type="date" class="form-control" value="@(endDate?.ToString("yyyy-MM-dd") ?? "")" @onchange="OnEndDateChange" />
+                        </div>
+                    </div>
+
+                    <div class="filter-actions">
+                        <button class="btn-clear" @onclick="ClearDateFilters">
+                            <i class="fas fa-times"></i>
+                            <span>Clear Filters</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Summary Cards -->
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <div class="summary-icon total-orders-icon">
+                            <i class="fas fa-file-invoice"></i>
+                        </div>
+                        <div class="summary-content">
+                            <div class="summary-label">Total Orders</div>
+                            <div class="summary-value">@TotalOrders</div>
+                            <div class="summary-count">All purchase orders</div>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-icon total-cost-icon">
+                            <i class="fas fa-money-bill-wave"></i>
+                        </div>
+                        <div class="summary-content">
+                            <div class="summary-label">Total Cost</div>
+                            <div class="summary-value">₱@TotalCost.ToString("N2")</div>
+                            <div class="summary-count">Total amount</div>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-icon pending-orders-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="summary-content">
+                            <div class="summary-label">Pending Orders</div>
+                            <div class="summary-value">@PendingOrders</div>
+                            <div class="summary-count">Awaiting delivery</div>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-icon received-orders-icon">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="summary-content">
+                            <div class="summary-label">Received Orders</div>
+                            <div class="summary-value">@ReceivedOrders</div>
+                            <div class="summary-count">Delivered & received</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="toolbar">
+                    <button class="add-item-btn" @onclick="ShowPurchaseOrderModal">
+                        <i class="fas fa-plus"></i>
+                        <span>Create Purchase Order</span>
+                    </button>
+
+                    <div class="search-container">
+                        <input type="text"
+                               class="search-input"
+                               placeholder="Search purchase orders..."
+                               value="@searchTerm"
+                               @oninput="OnSearchInput" />
+                        <span class="search-icon"><i class="fas fa-search"></i></span>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="product-table">
+                    <thead>
+                        <tr>
+                            <th>PO Number</th>
+                            <th>Supplier</th>
+                            <th>Date Ordered</th>
+                            <th>Expected Date</th>
+                            <th>Total Items</th>
+                            <th>Subtotal</th>
+                            <th>Tax</th>
+                            <th>Total Amount</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (PaginatedOrders.Any())
+                        {
+                            @foreach (var order in PaginatedOrders)
+                            {
+                                <tr>
+                                    <td>@order.PONumber</td>
+                                    <td>
+                                        <div class="supplier-info">
+                                            <div class="supplier-name">@(string.IsNullOrEmpty(order.SupplierName) ? "N/A" : order.SupplierName)</div>
+                                            @if (!string.IsNullOrEmpty(order.SupplierEmail))
+                                            {
+                                                <div class="supplier-email">@order.SupplierEmail</div>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td>@order.DateOrdered.ToString("MM/dd/yyyy")</td>
+                                    <td>@order.ExpectedDate.ToString("MM/dd/yyyy")</td>
+                                    <td>@order.TotalItems</td>
+                                    <td>₱@order.Subtotal.ToString("N2")</td>
+                                    <td>₱@order.TaxAmount.ToString("N2")</td>
+                                    <td>₱@order.TotalAmount.ToString("N2")</td>
+                                    <td>
+                                        <span class="status-badge @GetStatusBadgeClass(order.Status)">
+                                            @order.Status
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="view-btn" title="View Details" @onclick="() => ViewPurchaseOrderDetails(order)">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            @if (order.Status?.ToLower() != "delivered" && order.Status?.ToLower() != "received" && order.Status?.ToLower() != "cancelled")
+                                            {
+                                                <button class="edit-btn" title="Mark as Delivered" @onclick="() => ShowMarkAsDeliveredConfirmation(order)">
+                                                    <i class="fas fa-check-circle"></i>
+                                                </button>
+                                            }
+                                            @if (order.Status?.ToLower() == "delivered")
+                                            {
+                                                <button class="edit-btn" title="Go to Stock In" @onclick="() => GoToStockIn()">
+                                                    <i class="fas fa-truck-loading"></i>
+                                                </button>
+                                            }
+                                            @if (order.Status?.ToLower() != "delivered" && order.Status?.ToLower() != "received" && order.Status?.ToLower() != "cancelled")
+                                            {
+                                                <button class="deactivate-btn" title="Cancel Purchase Order" @onclick="() => ShowCancelModal(order)">
+                                                    <i class="fas fa-times-circle"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                        else
+                        {
+                            <tr>
+                                <td colspan="10" class="empty-state-cell">
+                                    <div class="empty-state">
+                                        <i class="fas fa-file-invoice empty-state-icon"></i>
+                                        @if (string.IsNullOrWhiteSpace(searchTerm) && !HasActiveDateFilters())
+                                        {
+                                            <p class="empty-state-text">No purchase orders found. Click "Create Purchase Order" to add your first order.</p>
+                                        }
+                                        else
+                                        {
+                                            <p class="empty-state-text">No purchase orders match your search criteria or date filters.</p>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                    </table>
+                </div>
+
+                <!-- Mobile Card View -->
+                <div class="po-cards-container">
+                    @if (PaginatedOrders.Any())
+                    {
+                        @foreach (var order in PaginatedOrders)
+                        {
+                            <div class="po-card">
+                                <div class="po-card-header">
+                                    <div>
+                                        <h3 class="po-card-title">@order.PONumber</h3>
+                                        <span class="po-card-supplier">@(string.IsNullOrEmpty(order.SupplierName) ? "N/A" : order.SupplierName)</span>
+                                    </div>
+                                    <span class="status-badge @GetStatusBadgeClass(order.Status)">@order.Status</span>
+                                </div>
+                                <div class="po-card-body">
+                                    <div class="po-info-group">
+                                        <span class="po-info-label">Date Ordered</span>
+                                        <span class="po-info-value">@order.DateOrdered.ToString("MM/dd/yyyy")</span>
+                                    </div>
+                                    <div class="po-info-group">
+                                        <span class="po-info-label">Expected Date</span>
+                                        <span class="po-info-value">@order.ExpectedDate.ToString("MM/dd/yyyy")</span>
+                                    </div>
+                                    <div class="po-info-group">
+                                        <span class="po-info-label">Total Items</span>
+                                        <span class="po-info-value">@order.TotalItems</span>
+                                    </div>
+                                    <div class="po-info-group">
+                                        <span class="po-info-label">Total Amount</span>
+                                        <span class="po-info-value total-amount">₱@order.TotalAmount.ToString("N2")</span>
+                                    </div>
+                                </div>
+                                <div class="po-card-footer">
+                                    <button class="view-btn" title="View Details" @onclick="() => ViewPurchaseOrderDetails(order)">
+                                        <i class="fas fa-eye"></i>
+                                        <span>View</span>
+                                    </button>
+                                    @if (order.Status?.ToLower() != "delivered" && order.Status?.ToLower() != "received" && order.Status?.ToLower() != "cancelled")
+                                    {
+                                        <button class="edit-btn" title="Mark as Delivered" @onclick="() => ShowMarkAsDeliveredConfirmation(order)">
+                                            <i class="fas fa-check-circle"></i>
+                                            <span>Delivered</span>
+                                        </button>
+                                    }
+                                    @if (order.Status?.ToLower() == "delivered")
+                                    {
+                                        <button class="edit-btn" title="Go to Stock In" @onclick="() => GoToStockIn()">
+                                            <i class="fas fa-truck-loading"></i>
+                                            <span>Stock In</span>
+                                        </button>
+                                    }
+                                    @if (order.Status?.ToLower() != "delivered" && order.Status?.ToLower() != "received" && order.Status?.ToLower() != "cancelled")
+                                    {
+                                        <button class="deactivate-btn" title="Cancel Purchase Order" @onclick="() => ShowCancelModal(order)">
+                                            <i class="fas fa-times-circle"></i>
+                                            <span>Cancel</span>
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-file-invoice empty-state-icon"></i>
+                            @if (string.IsNullOrWhiteSpace(searchTerm) && !HasActiveDateFilters())
+                            {
+                                <p class="empty-state-text">No purchase orders found. Click "Create Purchase Order" to add your first order.</p>
+                            }
+                            else
+                            {
+                                <p class="empty-state-text">No purchase orders match your search criteria or date filters.</p>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Pagination -->
+                @if (FilteredOrders.Any())
+                {
+                    <Pagination CurrentPage="@currentPage"
+                                PageSize="@pageSize"
+                                TotalItems="@FilteredOrders.Count()"
+                                PageChanged="@OnPageChanged"
+                                PageSizeChanged="@OnPageSizeChanged" />
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Purchase Order Modal -->
+@if (showPurchaseOrderModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Create Purchase Order</h3>
+                <button class="modal-close" @onclick="ShowCancelCreatePOModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <!-- Validation Summary -->
+
+                <div class="form-container">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Supplier *</label>
+                            <select class="form-control @(HasError("Supplier") ? "input-error" : "")" @bind="selectedSupplierId">
+                                <option value="">Select Supplier</option>
+                                @foreach (var supplier in suppliers)
+                                {
+                                    <option value="@supplier.Id">@supplier.Name</option>
+                                }
+                            </select>
+                            @if (HasError("Supplier"))
+                            {
+                                <span class="field-error">@GetError("Supplier")</span>
+                            }
+                        </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="text" class="form-control" value="@GetSupplierEmail()" disabled />
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Contact Number</label>
+                            <input type="text" class="form-control" value="@GetSupplierContact()" disabled />
+                        </div>
+                        <div class="form-group">
+                            <label>Date Ordered *</label>
+                            <input type="date" class="form-control @(HasError("DateOrdered") ? "input-error" : "")"
+                                   @bind="dateOrdered" max="@DateTime.Now.ToString("yyyy-MM-dd")" />
+                            @if (HasError("DateOrdered"))
+                            {
+                                <span class="field-error">@GetError("DateOrdered")</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Expected Date *</label>
+                            <input type="date" class="form-control @(HasError("ExpectedDate") ? "input-error" : "")"
+                                   @bind="expectedDate" min="@DateTime.Now.ToString("yyyy-MM-dd")" />
+                            @if (HasError("ExpectedDate"))
+                            {
+                                <span class="field-error">@GetError("ExpectedDate")</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Order Notes</label>
+                            <input type="text" class="form-control" @bind="orderNotes" placeholder="Optional notes..." />
+                        </div>
+                    </div>
+
+                    <!-- Order Items Section -->
+                    <div class="order-items-section">
+                        <div class="section-header">
+                            <h4>Order Items</h4>
+                            <button class="add-item-btn" @onclick="ShowAddItemModal">
+                                <i class="fas fa-plus"></i> Add Item
+                            </button>
+                        </div>
+
+                        @if (orderItems.Any())
+                        {
+                            <table class="items-table">
+                                <thead>
+                                    <tr>
+                                        <th>Product Name</th>
+                                        <th>Quantity</th>
+                                        <th>Unit Cost</th>
+                                        <th>Subtotal</th>
+                                        <th>Tax Rate</th>
+                                        <th>Tax Amount</th>
+                                        <th>Total</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in orderItems)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @item.ProductName
+                                                @if (item.IsTaxOverridden)
+                                                {
+                                                    <span class="badge" style="background-color: #f59e0b; color: white; font-size: 0.75rem; margin-left: 5px; padding: 2px 6px; border-radius: 3px;" title="Tax overridden for this item">Override</span>
+                                                }
+                                            </td>
+                                            <td>@item.Quantity</td>
+                                            <td>₱@item.UnitCost.ToString("N2")</td>
+                                            <td>₱@item.Subtotal.ToString("N2")</td>
+                                            <td>@(item.TaxRate > 0 ? $"{item.TaxRate * 100:N2}%" : "No Tax")</td>
+                                            <td>₱@item.TaxAmount.ToString("N2")</td>
+                                            <td>₱@item.TotalPrice.ToString("N2")</td>
+                                            <td>
+                                                <button class="delete-btn" @onclick="() => RemoveItem(item)">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="3" style="text-align: right;"><strong>Subtotal:</strong></td>
+                                        <td><strong>₱@GetSubtotal().ToString("N2")</strong></td>
+                                        <td colspan="2"></td>
+                                        <td></td>
+                                        <td></td>
+                                    </tr>
+                                    @if (GetTaxAmount() > 0)
+                                    {
+                                        <tr>
+                                            <td colspan="3" style="text-align: right;"><strong>Total Tax:</strong></td>
+                                            <td></td>
+                                            <td colspan="2" style="font-weight: 600;">₱@GetTaxAmount().ToString("N2")</td>
+                                            <td></td>
+                                            <td></td>
+                                        </tr>
+                                    }
+                                    <tr class="total-row">
+                                        <td colspan="3" style="text-align: right;"><strong>Grand Total:</strong></td>
+                                        <td></td>
+                                        <td colspan="2"></td>
+                                        <td><strong>₱@GetGrandTotal().ToString("N2")</strong></td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        }
+                        else
+                        {
+                            <div class="no-items">
+                                <i class="fas fa-shopping-basket"></i>
+                                <p>No items added to the order</p>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="ShowCancelCreatePOModal">Cancel</button>
+                <button class="btn-submit" @onclick="ShowCreatePOConfirmation" disabled="@(!IsFormValid || !orderItems.Any())">
+                    @if (isSubmitting)
+                    {
+                        <span>Processing...</span>
+                    }
+                    else
+                    {
+                        <span>Create Purchase Order</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Add Item Modal -->
+@if (showAddItemModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-content small-modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Add Item</h3>
+                <button class="modal-close" @onclick="ShowCancelAddItemModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-container">
+                    <div class="form-group">
+                        <label>Product *</label>
+                        <select class="form-control" value="@selectedProductId" @onchange="OnProductSelected">
+                            <option value="">Select Product</option>
+                            @foreach (var product in products)
+                            {
+                                <option value="@product.Id">@product.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Quantity *</label>
+                            <input type="number" class="form-control" @bind="newItemQuantity" min="1" />
+                        </div>
+                        <div class="form-group">
+                            <label>Unit Cost *</label>
+                            <input type="number" class="form-control" @bind="newItemUnitCost" step="0.01" min="0" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" @bind="overrideTax" style="margin-right: 8px;" />
+                            Override Tax (Use product tax if unchecked)
+                        </label>
+                    </div>
+                    @if (overrideTax)
+                    {
+                        <div class="form-group">
+                            <label>Tax *</label>
+                            <select class="form-control" @bind="selectedOverrideTaxId">
+                                <option value="">No Tax</option>
+                                @foreach (var tax in availableTaxes.Where(t => t.is_active))
+                                {
+                                    <option value="@tax.tax_id.ToString()">@tax.tax_name (@(tax.tax_rate * 100)%)</option>
+                                }
+                            </select>
+                            <small style="color: #6b7280; font-size: 0.875rem;">This will override the product's default tax for this purchase order only.</small>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="ShowCancelAddItemModal">Cancel</button>
+                <button class="btn-submit" @onclick="AddItem" disabled="@(string.IsNullOrEmpty(selectedProductId) || newItemQuantity <= 0 || newItemUnitCost <= 0 || (overrideTax && string.IsNullOrEmpty(selectedOverrideTaxId)))">
+                    Add Item
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- View Purchase Order Details Modal -->
+@if (showViewDetailsModal && viewingPurchaseOrder != null)
+{
+    <div class="modal-overlay">
+        <div class="modal-content large-modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Purchase Order Details - @viewingPurchaseOrder.PONumber</h3>
+                <button class="modal-close" @onclick="CloseViewDetailsModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                @if (isLoadingDetails)
+                {
+                    <div class="loading-indicator">
+                        <div class="spinner"></div>
+                        <span>Loading details...</span>
+                    </div>
+                }
+                else
+                {
+                    <!-- PO Information Section -->
+                    <div class="po-details-section">
+                        <div class="po-details-grid">
+                            <div class="po-detail-item">
+                                <label>PO Number:</label>
+                                <span>@viewingPurchaseOrder.PONumber</span>
+                            </div>
+                            <div class="po-detail-item">
+                                <label>Supplier:</label>
+                                <span>@viewingPurchaseOrder.SupplierName</span>
+                            </div>
+                            <div class="po-detail-item">
+                                <label>Date Ordered:</label>
+                                <span>@viewingPurchaseOrder.DateOrdered.ToString("MM/dd/yyyy")</span>
+                            </div>
+                            <div class="po-detail-item">
+                                <label>Expected Date:</label>
+                                <span>@viewingPurchaseOrder.ExpectedDate.ToString("MM/dd/yyyy")</span>
+                            </div>
+                            <div class="po-detail-item">
+                                <label>Status:</label>
+                                <span class="status-badge @GetStatusBadgeClass(viewingPurchaseOrder.Status)">@viewingPurchaseOrder.Status</span>
+                            </div>
+                            @if (viewingPurchaseOrder.Status == "Cancelled" && !string.IsNullOrEmpty(viewingPurchaseOrder.CancellationReason))
+                            {
+                                <div class="po-detail-item">
+                                    <label>Cancellation Reason:</label>
+                                    <span style="color: #dc2626;">@viewingPurchaseOrder.CancellationReason</span>
+                                </div>
+                            }
+                            @if (viewingPurchaseOrder.Status == "Cancelled" && !string.IsNullOrEmpty(viewingPurchaseOrder.CancellationRemarks))
+                            {
+                                <div class="po-detail-item full-width">
+                                    <label>Cancellation Remarks:</label>
+                                    <span style="color: #6b7280; font-style: italic;">@viewingPurchaseOrder.CancellationRemarks</span>
+                                </div>
+                            }
+                            <div class="po-detail-item">
+                                <label>Total Items:</label>
+                                <span>@viewingPurchaseOrder.TotalItems</span>
+                            </div>
+                            @if (viewingPurchaseOrder.Subtotal > 0 || viewingPurchaseOrder.TaxAmount > 0)
+                            {
+                                <div class="po-detail-item">
+                                    <label>Subtotal:</label>
+                                    <span>₱@viewingPurchaseOrder.Subtotal.ToString("N2")</span>
+                                </div>
+                                @if (viewingPurchaseOrder.TaxAmount > 0)
+                                {
+                                    <div class="po-detail-item">
+                                        <label>Tax:</label>
+                                        <span>₱@viewingPurchaseOrder.TaxAmount.ToString("N2")</span>
+                                    </div>
+                                }
+                            }
+                            <div class="po-detail-item full-width">
+                                <label>Total Amount:</label>
+                                <span class="total-amount">₱@viewingPurchaseOrder.TotalAmount.ToString("N2")</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items Section -->
+                    <div class="po-items-section">
+                        <h4>Order Items</h4>
+                        @if (viewingPOItems.Any())
+                        {
+                            <table class="po-items-table">
+                                <thead>
+                                    <tr>
+                                        <th>Product Name</th>
+                                        <th>SKU</th>
+                                        <th>Quantity</th>
+                                        <th>Unit Cost</th>
+                                        <th>Subtotal</th>
+                                        <th>Tax Rate</th>
+                                        <th>Tax Amount</th>
+                                        <th>Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in viewingPOItems)
+                                    {
+                                        var itemSubtotal = item.subtotal > 0 ? item.subtotal : (item.quantity_ordered * item.unit_cost);
+                                        var itemTaxAmount = item.tax_amount > 0 ? item.tax_amount : 0;
+                                        var itemTotal = item.total > 0 ? item.total : (itemSubtotal + itemTaxAmount);
+                                        var itemTaxRate = item.tax_rate > 0 ? item.tax_rate : 0;
+                                        
+                                        <tr>
+                                            <td>@(item.product_name ?? "N/A")</td>
+                                            <td>@(item.product_sku ?? "N/A")</td>
+                                            <td>@item.quantity_ordered</td>
+                                            <td>₱@item.unit_cost.ToString("N2")</td>
+                                            <td>₱@itemSubtotal.ToString("N2")</td>
+                                            <td>@(itemTaxRate > 0 ? $"{itemTaxRate * 100:N2}%" : "No Tax")</td>
+                                            <td>₱@itemTaxAmount.ToString("N2")</td>
+                                            <td>₱@itemTotal.ToString("N2")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="4" style="text-align: right; font-weight: 600;">Subtotal:</td>
+                                        <td style="font-weight: 600;">₱@viewingPurchaseOrder.Subtotal.ToString("N2")</td>
+                                        <td colspan="2"></td>
+                                        <td></td>
+                                    </tr>
+                                    @if (viewingPurchaseOrder.TaxAmount > 0)
+                                    {
+                                        <tr>
+                                            <td colspan="4" style="text-align: right; font-weight: 600;">Total Tax:</td>
+                                            <td></td>
+                                            <td colspan="2" style="font-weight: 600;">₱@viewingPurchaseOrder.TaxAmount.ToString("N2")</td>
+                                            <td></td>
+                                        </tr>
+                                    }
+                                    <tr>
+                                        <td colspan="4" style="text-align: right; font-weight: 700;">Grand Total:</td>
+                                        <td></td>
+                                        <td colspan="2"></td>
+                                        <td style="font-weight: 700; font-size: 16px;">₱@viewingPurchaseOrder.TotalAmount.ToString("N2")</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        }
+                        else
+                        {
+                            <div class="no-items">
+                                <p>No items found for this purchase order.</p>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="CloseViewDetailsModal">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancel Purchase Order Modal -->
+@if (showCancelModal && cancellingOrder != null)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true" style="max-width: 600px;">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Purchase Order
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 32px 24px; text-align: left;">
+                <div class="cancellation-icon-container" style="margin-bottom: 24px; text-align: center;">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message" style="margin-bottom: 24px; text-align: center;">
+                    Are you sure you want to cancel Purchase Order <strong>@cancellingOrder.PONumber</strong>? This action cannot be undone and the order will not be available for stock in.
+                </p>
+                
+                <div class="form-container" style="margin-top: 24px;">
+                    <div class="form-group">
+                        <label for="cancellationReason">Cancellation Reason <span style="color: #6b7280; font-weight: normal; font-size: 12px;">(Optional)</span></label>
+                        <select id="cancellationReason"
+                                class="form-control"
+                                @bind="cancellationReason">
+                            <option value="">Select a reason...</option>
+                            <option value="Supplier Unable to Deliver">Supplier Unable to Deliver</option>
+                            <option value="Price Change">Price Change</option>
+                            <option value="Product No Longer Needed">Product No Longer Needed</option>
+                            <option value="Quality Issues">Quality Issues</option>
+                            <option value="Delivery Delay">Delivery Delay</option>
+                            <option value="Budget Constraints">Budget Constraints</option>
+                            <option value="Order Error">Order Error</option>
+                            <option value="Supplier Request">Supplier Request</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="cancellationRemarks">Cancellation Remarks <span style="color: #6b7280; font-weight: normal; font-size: 12px;">(Optional)</span></label>
+                        <textarea id="cancellationRemarks"
+                                  class="form-control"
+                                  @bind="cancellationRemarks"
+                                  @bind:event="oninput"
+                                  placeholder="Enter additional details or remarks..."
+                                  rows="4"
+                                  maxlength="1000"
+                                  style="resize: vertical; min-height: 100px;"></textarea>
+                        <div class="character-count">
+                            @cancellationRemarks.Length/1000 characters
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelModal">Keep Order</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelPurchaseOrder">
+                    Cancel Purchase Order
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Confirmation Modal for Create Purchase Order -->
+@if (showCreatePOConfirmation)
+{
+    <div class="modal-overlay confirmation-modal-overlay">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header confirmation-modal-header">
+                <h3>Confirm Create Purchase Order</h3>
+                <button class="modal-close" @onclick="CloseCreatePOConfirmation"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body confirmation-modal-body">
+                <div class="confirmation-message-box">
+                    <p class="confirmation-question">Are you sure you want to create this purchase order?</p>
+                </div>
+                <div class="confirmation-details">
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Supplier:</span>
+                        <span class="confirmation-value">@(suppliers.FirstOrDefault(s => s.Id == selectedSupplierId)?.Name ?? "N/A")</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Date Ordered:</span>
+                        <span class="confirmation-value">@dateOrdered.ToString("MM/dd/yyyy")</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Expected Date:</span>
+                        <span class="confirmation-value">@expectedDate.ToString("MM/dd/yyyy")</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Total Items:</span>
+                        <span class="confirmation-value">@orderItems.Count</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Grand Total:</span>
+                        <span class="confirmation-value total-amount">₱@GetGrandTotal().ToString("N2")</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer confirmation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCreatePOConfirmation">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmCreatePurchaseOrder">Confirm Create</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Confirmation Modal for Mark as Delivered -->
+@if (showMarkAsDeliveredConfirmation && orderToMarkAsDelivered != null)
+{
+    <div class="modal-overlay confirmation-modal-overlay">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header confirmation-modal-header">
+                <h3>Confirm Mark as Delivered</h3>
+                <button class="modal-close" @onclick="CloseMarkAsDeliveredConfirmation"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body confirmation-modal-body">
+                <div class="confirmation-message-box">
+                    <p class="confirmation-question">Are you sure you want to mark Purchase Order <strong>@orderToMarkAsDelivered.PONumber</strong> as Delivered?</p>
+                </div>
+                <p style="color: #6b7280; font-size: 0.875rem; margin-top: 16px;">This will change the status to "Delivered" and make it available for stock in.</p>
+            </div>
+            <div class="modal-footer confirmation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseMarkAsDeliveredConfirmation">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmMarkAsDelivered">Confirm</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Create Purchase Order -->
+@if (showCancelCreatePOModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Create Purchase Order?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelCreatePOModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelCreatePOModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelCreatePO">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Add Item -->
+@if (showCancelAddItemModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Add Item?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelAddItemModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelAddItemModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelAddItem">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Success Modal -->
+@if (showSuccessModal)
+{
+    <div class="modal-overlay success-modal-overlay">
+        <div class="modal-content success-modal" @onclick:stopPropagation="true">
+            <div class="modal-header success-modal-header">
+                <h3>
+                    <i class="fas fa-check-circle"></i>
+                    Success!
+                </h3>
+                <button class="modal-close" @onclick="CloseSuccessModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body success-modal-body">
+                <div class="success-icon-container">
+                    <i class="fas fa-check-circle success-icon"></i>
+                </div>
+                <p class="success-message">@successModalMessage</p>
+            </div>
+            <div class="modal-footer success-modal-footer">
+                <button class="btn-submit" @onclick="CloseSuccessModal">OK</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool showPurchaseOrderModal = false;
+    private bool showAddItemModal = false;
+    private bool showViewDetailsModal = false;
+    private bool showCancelModal = false;
+    private bool showCreatePOConfirmation = false;
+    private bool showMarkAsDeliveredConfirmation = false;
+    private bool showCancelCreatePOModal = false;
+    private bool showCancelAddItemModal = false;
+    private bool showSuccessModal = false;
+    private string successModalMessage = "";
+    private PurchaseOrderDisplay? orderToMarkAsDelivered = null;
+    private PurchaseOrderDisplay? viewingPurchaseOrder = null;
+    private PurchaseOrderDisplay? cancellingOrder = null;
+    private string cancellationReason = "";
+    private string cancellationRemarks = "";
+    private List<PurchaseOrderItem> viewingPOItems = new List<PurchaseOrderItem>();
+    private bool isLoadingDetails = false;
+    private bool isSubmitting = false;
+    private string errorMessage = "";
+    private string successMessage = "";
+    private List<string> validationErrors = new List<string>();
+
+    // Form fields
+    private string selectedSupplierId = "";
+    private DateTime dateOrdered = DateTime.Now;
+    private DateTime expectedDate = DateTime.Now.AddDays(7);
+    private string orderNotes = "";
+    private string searchTerm = "";
+
+    // Date filters
+    private DateTime? startDate = null;
+    private DateTime? endDate = null;
+
+    // Item fields
+    private string selectedProductId = "";
+    private int newItemQuantity = 1;
+    private decimal newItemUnitCost = 0;
+    private bool overrideTax = false;
+    private string selectedOverrideTaxId = "";
+
+    // Data collections
+    private List<OrderItem> orderItems = new List<OrderItem>();
+    private List<PurchaseOrderDisplay> purchaseOrderHistory = new List<PurchaseOrderDisplay>();
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+
+    // Data collections (loaded from database)
+    private List<SupplierDisplay> suppliers = new List<SupplierDisplay>();
+    private List<ProductDisplay> products = new List<ProductDisplay>();
+    private List<TaxModel> availableTaxes = new List<TaxModel>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+        
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            // Load suppliers from database
+            var dbSuppliers = await SupplierService.GetSuppliersAsync();
+            suppliers = dbSuppliers.Where(s => s.is_active).Select(s => new SupplierDisplay
+            {
+                Id = s.supplier_id.ToString(),
+                Name = s.supplier_name,
+                Email = s.email ?? "",
+                ContactNumber = s.contact_number ?? ""
+            }).ToList();
+
+            // Load products from database
+            var dbProducts = await ProductService.GetProductsAsync();
+            products = dbProducts.Select(p => new ProductDisplay
+            {
+                Id = p.product_id.ToString(),
+                Name = p.product_name,
+                Brand = "", // Will be loaded if needed
+                Category = "", // Will be loaded if needed
+                CostPrice = p.cost_price,
+                TaxId = p.tax_id
+            }).ToList();
+            
+            // Load taxes for tax rate lookup
+            await LoadTaxes();
+
+            // Load purchase orders from database
+            await LoadPurchaseOrders();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading data: {ex.Message}";
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadPurchaseOrders()
+    {
+        try
+        {
+            var dbPOs = await PurchaseOrderService.GetAllPurchaseOrdersAsync();
+            purchaseOrderHistory = new List<PurchaseOrderDisplay>();
+            
+            foreach (var po in dbPOs)
+            {
+                // Get item count for this PO
+                var items = await PurchaseOrderService.GetPurchaseOrderItemsAsync(po.po_id);
+                
+                purchaseOrderHistory.Add(new PurchaseOrderDisplay
+                {
+                    POId = po.po_id,
+                    PONumber = po.po_number ?? "",
+                    SupplierName = po.supplier_name ?? "",
+                    SupplierEmail = "", // Can be loaded if needed
+                    DateOrdered = po.order_date,
+                    ExpectedDate = po.expected_date,
+                    TotalItems = items?.Count ?? 0,
+                    Subtotal = po.subtotal,
+                    TaxAmount = po.tax_amount,
+                    TotalAmount = po.total_amount,
+                    Status = po.status ?? "Pending"
+                });
+            }
+            // Sort by PO ID in ascending order
+            purchaseOrderHistory = purchaseOrderHistory.OrderBy(po => po.POId).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading purchase orders: {ex.Message}";
+            Console.WriteLine($"Error loading POs: {ex}");
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private void ShowPurchaseOrderModal()
+    {
+        showPurchaseOrderModal = true;
+        ClearValidationErrors();
+        StateHasChanged();
+    }
+
+    private void ShowCancelCreatePOModal()
+    {
+        showCancelCreatePOModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseCancelCreatePOModal()
+    {
+        showCancelCreatePOModal = false;
+        StateHasChanged();
+    }
+
+    private void ConfirmCancelCreatePO()
+    {
+        showCancelCreatePOModal = false;
+        CloseModal();
+    }
+
+    private void CloseModal()
+    {
+        showPurchaseOrderModal = false;
+        ResetForm();
+        ClearValidationErrors();
+        StateHasChanged();
+    }
+
+    private void ShowAddItemModal()
+    {
+        showAddItemModal = true;
+        StateHasChanged();
+    }
+
+    private void ShowCancelAddItemModal()
+    {
+        showCancelAddItemModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseCancelAddItemModal()
+    {
+        showCancelAddItemModal = false;
+        StateHasChanged();
+    }
+
+    private void ConfirmCancelAddItem()
+    {
+        showCancelAddItemModal = false;
+        CloseAddItemModal();
+    }
+
+    private void CloseAddItemModal()
+    {
+        showAddItemModal = false;
+        ResetAddItemForm();
+        StateHasChanged();
+    }
+
+    private void CloseSuccessModal()
+    {
+        showSuccessModal = false;
+        successModalMessage = "";
+        StateHasChanged();
+    }
+
+    private void ResetForm()
+    {
+        selectedSupplierId = "";
+        dateOrdered = DateTime.Now;
+        expectedDate = DateTime.Now.AddDays(7);
+        orderNotes = "";
+        orderItems.Clear();
+        isSubmitting = false;
+    }
+
+    private void ResetItemForm()
+    {
+        selectedProductId = "";
+        newItemQuantity = 1;
+        newItemUnitCost = 0;
+        overrideTax = false;
+        selectedOverrideTaxId = "";
+    }
+
+    private void OnProductSelected(ChangeEventArgs e)
+    {
+        selectedProductId = e.Value?.ToString() ?? "";
+        
+        // Reset tax override when product changes
+        overrideTax = false;
+        selectedOverrideTaxId = "";
+        
+        // Auto-fill unit cost with product's cost price
+        if (!string.IsNullOrEmpty(selectedProductId))
+        {
+            var product = products.FirstOrDefault(p => p.Id == selectedProductId);
+            if (product != null && product.CostPrice.HasValue)
+            {
+                newItemUnitCost = product.CostPrice.Value;
+            }
+        }
+        else
+        {
+            newItemUnitCost = 0;
+        }
+        
+        StateHasChanged();
+    }
+
+    private void ClearValidationErrors()
+    {
+        validationErrors.Clear();
+    }
+
+    private void ClearError()
+    {
+        errorMessage = "";
+    }
+
+    private void ClearSuccess()
+    {
+        successMessage = "";
+    }
+
+    private bool HasError(string fieldName)
+    {
+        return validationErrors.Any(e => e.Contains(fieldName));
+    }
+
+    private string GetError(string field)
+    {
+        return validationErrors.FirstOrDefault(error => error.StartsWith($"{field}:"))?.Split(':')[1]?.Trim() ?? "";
+    }
+
+    private string GetSupplierEmail()
+    {
+        var supplier = suppliers.FirstOrDefault(s => s.Id == selectedSupplierId);
+        return supplier?.Email ?? "";
+    }
+
+    private string GetSupplierContact()
+    {
+        var supplier = suppliers.FirstOrDefault(s => s.Id == selectedSupplierId);
+        return supplier?.ContactNumber ?? "";
+    }
+
+    private decimal GetSubtotal()
+    {
+        return orderItems.Sum(item => item.Subtotal);
+    }
+
+    private decimal GetTaxAmount()
+    {
+        return orderItems.Sum(item => item.TaxAmount);
+    }
+
+    private decimal GetGrandTotal()
+    {
+        return GetSubtotal() + GetTaxAmount();
+    }
+    
+    private async Task LoadTaxes()
+    {
+        try
+        {
+            availableTaxes = await TaxService.GetTaxesAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading taxes: {ex.Message}");
+            availableTaxes = new List<TaxModel>();
+        }
+    }
+
+    private IEnumerable<PurchaseOrderDisplay> FilteredOrders
+    {
+        get
+        {
+            var filtered = purchaseOrderHistory.AsEnumerable();
+
+            // Date filter
+            if (startDate.HasValue)
+            {
+                filtered = filtered.Where(o => o.DateOrdered >= startDate.Value);
+            }
+            if (endDate.HasValue)
+            {
+                filtered = filtered.Where(o => o.DateOrdered <= endDate.Value.AddDays(1).AddSeconds(-1));
+            }
+
+            // Search filter
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                filtered = filtered.Where(o =>
+                    o.PONumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    o.SupplierName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    o.SupplierEmail.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    o.Status.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return filtered;
+        }
+    }
+
+    private IEnumerable<PurchaseOrderDisplay> PaginatedOrders
+    {
+        get
+        {
+            var filtered = FilteredOrders.ToList();
+            return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
+        }
+    }
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+    {
+        pageSize = newPageSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void OnStartDateChange(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            startDate = date;
+        }
+        else
+        {
+            startDate = null;
+        }
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void OnEndDateChange(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            endDate = date;
+        }
+        else
+        {
+            endDate = null;
+        }
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void ClearDateFilters()
+    {
+        startDate = null;
+        endDate = null;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private bool HasActiveDateFilters()
+    {
+        return startDate.HasValue || endDate.HasValue;
+    }
+
+    // Summary card calculations
+    private int TotalOrders
+    {
+        get
+        {
+            return FilteredOrders.Count();
+        }
+    }
+
+    private decimal TotalCost
+    {
+        get
+        {
+            return FilteredOrders.Sum(o => o.TotalAmount);
+        }
+    }
+
+    private int PendingOrders
+    {
+        get
+        {
+            return FilteredOrders.Count(o => o.Status?.ToLower() == "pending");
+        }
+    }
+
+    private int ReceivedOrders
+    {
+        get
+        {
+            return FilteredOrders.Count(o => o.Status?.ToLower() == "delivered" || o.Status?.ToLower() == "received");
+        }
+    }
+
+    private void AddItem()
+    {
+        var product = products.FirstOrDefault(p => p.Id == selectedProductId);
+        if (product != null && newItemQuantity > 0 && newItemUnitCost > 0)
+        {
+            // Calculate subtotal
+            decimal subtotal = newItemQuantity * newItemUnitCost;
+            
+            // Determine which tax to use
+            int? taxIdToUse = null;
+            decimal taxRate = 0;
+            decimal taxAmount = 0;
+            bool isOverridden = false;
+            
+            if (overrideTax && !string.IsNullOrEmpty(selectedOverrideTaxId) && int.TryParse(selectedOverrideTaxId, out int overrideTaxId))
+            {
+                // Use overridden tax
+                isOverridden = true;
+                taxIdToUse = overrideTaxId;
+                var tax = availableTaxes.FirstOrDefault(t => t.tax_id == overrideTaxId && t.is_active);
+                if (tax != null)
+                {
+                    taxRate = tax.tax_rate;
+                    taxAmount = subtotal * taxRate;
+                }
+            }
+            else if (product.TaxId.HasValue)
+            {
+                // Use product's default tax
+                taxIdToUse = product.TaxId;
+                var tax = availableTaxes.FirstOrDefault(t => t.tax_id == product.TaxId.Value && t.is_active);
+                if (tax != null)
+                {
+                    taxRate = tax.tax_rate;
+                    taxAmount = subtotal * taxRate;
+                }
+            }
+            
+            // Calculate total
+            decimal total = subtotal + taxAmount;
+            
+            var newItem = new OrderItem
+            {
+                ProductId = selectedProductId,
+                ProductName = product.Name,
+                Quantity = newItemQuantity,
+                UnitCost = newItemUnitCost,
+                Subtotal = subtotal,
+                TaxId = taxIdToUse,
+                TaxRate = taxRate,
+                TaxAmount = taxAmount,
+                TotalPrice = total,
+                IsTaxOverridden = isOverridden,
+                OverrideTaxId = isOverridden ? taxIdToUse : null
+            };
+
+            orderItems.Add(newItem);
+            CloseAddItemModal();
+            ResetAddItemForm();
+            StateHasChanged();
+        }
+    }
+    
+    private void ResetAddItemForm()
+    {
+        selectedProductId = "";
+        newItemQuantity = 1;
+        newItemUnitCost = 0;
+        overrideTax = false;
+        selectedOverrideTaxId = "";
+    }
+
+    private void RemoveItem(OrderItem item)
+    {
+        orderItems.Remove(item);
+        StateHasChanged();
+    }
+
+    private List<string> ValidateForm()
+    {
+        var errors = new List<string>();
+
+        if (string.IsNullOrEmpty(selectedSupplierId))
+            errors.Add("Supplier: Please select a supplier");
+
+        if (dateOrdered > DateTime.Now)
+            errors.Add("DateOrdered: Date ordered cannot be in the future");
+
+        if (expectedDate <= dateOrdered)
+            errors.Add("ExpectedDate: Expected date must be after the order date");
+
+        if (!orderItems.Any())
+            errors.Add("Items: Please add at least one item to the purchase order");
+
+        return errors;
+    }
+
+    private bool IsFormValid
+    {
+        get
+        {
+            ValidateForm();
+            return validationErrors.Count == 0;
+        }
+    }
+
+    // Confirmation Modal Methods
+    private void ShowCreatePOConfirmation()
+    {
+        ClearValidationErrors();
+        ClearError();
+        ClearSuccess();
+        StateHasChanged();
+
+        validationErrors = ValidateForm();
+
+        if (validationErrors.Any())
+        {
+            StateHasChanged();
+            return;
+        }
+
+        if (!int.TryParse(selectedSupplierId, out int supplierId) || supplierId <= 0)
+        {
+            errorMessage = "Invalid supplier selected.";
+            StateHasChanged();
+            return;
+        }
+
+        if (!orderItems.Any())
+        {
+            errorMessage = "Please add at least one item to the order.";
+            StateHasChanged();
+            return;
+        }
+
+        showCreatePOConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseCreatePOConfirmation()
+    {
+        showCreatePOConfirmation = false;
+        StateHasChanged();
+    }
+
+    private void ShowMarkAsDeliveredConfirmation(PurchaseOrderDisplay order)
+    {
+        orderToMarkAsDelivered = order;
+        showMarkAsDeliveredConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseMarkAsDeliveredConfirmation()
+    {
+        showMarkAsDeliveredConfirmation = false;
+        orderToMarkAsDelivered = null;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmCreatePurchaseOrder()
+    {
+        showCreatePOConfirmation = false;
+        await SubmitPurchaseOrder();
+    }
+
+    private async Task ConfirmMarkAsDelivered()
+    {
+        if (orderToMarkAsDelivered != null)
+        {
+            showMarkAsDeliveredConfirmation = false;
+            var order = orderToMarkAsDelivered;
+            orderToMarkAsDelivered = null;
+            await MarkAsDelivered(order);
+        }
+    }
+
+    private async Task SubmitPurchaseOrder()
+    {
+        try
+        {
+            isSubmitting = true;
+            ClearValidationErrors();
+            ClearError();
+            ClearSuccess();
+            StateHasChanged();
+
+            validationErrors = ValidateForm();
+
+            if (validationErrors.Any())
+            {
+                StateHasChanged();
+                return;
+            }
+
+            // Validate supplier ID
+            if (!int.TryParse(selectedSupplierId, out int supplierId) || supplierId <= 0)
+            {
+                errorMessage = "Invalid supplier selected.";
+                isSubmitting = false;
+                StateHasChanged();
+                return;
+            }
+
+            // Convert OrderItems to PurchaseOrderItems (tax will be recalculated by service from product's tax_id)
+            var poItems = orderItems.Select(item => new PurchaseOrderItem
+            {
+                product_id = int.Parse(item.ProductId),
+                quantity_ordered = item.Quantity,
+                unit_cost = item.UnitCost
+                // Note: Tax will be calculated by PurchaseOrderService from product's tax_id
+            }).ToList();
+
+            // Save to database (tax is now calculated per item from product's tax_id)
+            var poId = await PurchaseOrderService.CreatePurchaseOrderAsync(
+                supplierId,
+                dateOrdered,
+                expectedDate,
+                orderNotes,
+                poItems
+            );
+
+            // Reload purchase orders from database
+            await LoadPurchaseOrders();
+            
+            // Reset form and close modal
+            ResetForm();
+            CloseModal();
+            CloseCreatePOConfirmation();
+
+            await Task.Delay(100);
+
+            // Show success modal
+            successModalMessage = "Purchase Order created successfully!";
+            showSuccessModal = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    // Helper classes for display
+    private class SupplierDisplay
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string ContactNumber { get; set; } = string.Empty;
+    }
+
+    private class ProductDisplay
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Brand { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public decimal? CostPrice { get; set; }
+        public int? TaxId { get; set; }
+    }
+
+    private class OrderItem
+    {
+        public string ProductId { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public decimal UnitCost { get; set; }
+        public decimal Subtotal { get; set; }
+        public int? TaxId { get; set; }
+        public decimal TaxRate { get; set; }
+        public decimal TaxAmount { get; set; }
+        public decimal TotalPrice { get; set; }
+        public bool IsTaxOverridden { get; set; }
+        public int? OverrideTaxId { get; set; }
+    }
+
+    private class PurchaseOrderDisplay
+    {
+        public int POId { get; set; }
+        public string PONumber { get; set; } = string.Empty;
+        public string SupplierName { get; set; } = string.Empty;
+        public string SupplierEmail { get; set; } = string.Empty;
+        public DateTime DateOrdered { get; set; }
+        public DateTime ExpectedDate { get; set; }
+        public int TotalItems { get; set; }
+        public decimal Subtotal { get; set; }
+        public decimal TaxAmount { get; set; }
+        public decimal TotalAmount { get; set; }
+        public string Status { get; set; } = "Pending";
+        public string? CancellationReason { get; set; }
+        public string? CancellationRemarks { get; set; }
+    }
+
+    private async Task MarkAsDelivered(PurchaseOrderDisplay order)
+    {
+        try
+        {
+
+            var success = await PurchaseOrderService.UpdatePurchaseOrderStatusAsync(order.POId, "Delivered");
+            
+            if (success)
+            {
+                await LoadPurchaseOrders();
+                CloseMarkAsDeliveredConfirmation();
+
+                await Task.Delay(100);
+
+                // Show success modal
+                successModalMessage = $"Purchase Order {order.PONumber} has been marked as Delivered.";
+                showSuccessModal = true;
+                StateHasChanged();
+            }
+            else
+            {
+                errorMessage = "Failed to update purchase order status.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error marking purchase order as delivered: {ex.Message}";
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private void GoToStockIn()
+    {
+        Navigation.NavigateTo("/stockin");
+    }
+
+    private string GetStatusBadgeClass(string status)
+    {
+        if (string.IsNullOrEmpty(status))
+            return "pending";
+
+        var normalized = status.ToLower().Replace(" ", "-");
+        return normalized;
+    }
+
+    private async Task ViewPurchaseOrderDetails(PurchaseOrderDisplay order)
+    {
+        try
+        {
+            showViewDetailsModal = true;
+            viewingPurchaseOrder = order;
+            isLoadingDetails = true;
+            viewingPOItems = new List<PurchaseOrderItem>();
+            StateHasChanged();
+
+            // Load full PO details from database
+            var fullPO = await PurchaseOrderService.GetPurchaseOrderByIdAsync(order.POId);
+            var items = await PurchaseOrderService.GetPurchaseOrderItemsAsync(order.POId);
+
+            // Update viewing order with full details
+            viewingPurchaseOrder.SupplierEmail = ""; // Can be loaded if needed
+            viewingPurchaseOrder.Subtotal = fullPO.subtotal;
+            viewingPurchaseOrder.TaxAmount = fullPO.tax_amount;
+            viewingPurchaseOrder.CancellationReason = fullPO.cancellation_reason;
+            viewingPurchaseOrder.CancellationRemarks = fullPO.cancellation_remarks;
+            viewingPOItems = items;
+
+            isLoadingDetails = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            isLoadingDetails = false;
+            errorMessage = $"Error loading purchase order details: {ex.Message}";
+            CloseViewDetailsModal();
+        }
+    }
+
+    private void CloseViewDetailsModal()
+    {
+        showViewDetailsModal = false;
+        viewingPurchaseOrder = null;
+        viewingPOItems.Clear();
+        isLoadingDetails = false;
+        StateHasChanged();
+    }
+
+    private void ShowCancelModal(PurchaseOrderDisplay order)
+    {
+        cancellingOrder = order;
+        cancellationReason = "";
+        cancellationRemarks = "";
+        showCancelModal = true;
+        errorMessage = "";
+        StateHasChanged();
+    }
+
+    private void CloseCancelModal()
+    {
+        showCancelModal = false;
+        cancellingOrder = null;
+        cancellationReason = "";
+        cancellationRemarks = "";
+        StateHasChanged();
+    }
+
+    private async Task ConfirmCancelPurchaseOrder()
+    {
+        if (cancellingOrder == null)
+        {
+            errorMessage = "No purchase order selected for cancellation.";
+            StateHasChanged();
+            return;
+        }
+
+        if (PurchaseOrderService == null)
+        {
+            errorMessage = "Purchase order service is not available.";
+            StateHasChanged();
+            return;
+        }
+
+        // Save PO number before closing modal (since CloseCancelModal sets cancellingOrder to null)
+        string poNumber = cancellingOrder.PONumber ?? "Unknown";
+        int poId = cancellingOrder.POId;
+
+        try
+        {
+            var success = await PurchaseOrderService.UpdatePurchaseOrderStatusAsync(
+                poId, 
+                "Cancelled", 
+                string.IsNullOrWhiteSpace(cancellationReason) ? null : cancellationReason.Trim(),
+                string.IsNullOrWhiteSpace(cancellationRemarks) ? null : cancellationRemarks.Trim());
+            
+            if (success)
+            {
+                CloseCancelModal();
+                await LoadPurchaseOrders();
+
+                await Task.Delay(100);
+
+                // Show success modal
+                successModalMessage = $"Purchase Order {poNumber} has been cancelled.";
+                showSuccessModal = true;
+                errorMessage = ""; // Clear any previous errors
+                StateHasChanged();
+            }
+            else
+            {
+                errorMessage = "Failed to cancel purchase order. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error cancelling purchase order: {ex.Message}";
+            Console.WriteLine($"CancelPurchaseOrder error: {ex}");
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+}

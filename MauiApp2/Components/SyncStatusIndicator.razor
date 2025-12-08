@@ -1,0 +1,192 @@
+@using MauiApp2.Services
+@inject IConnectivityService ConnectivityService
+@inject ISyncQueueService SyncQueueService
+@inject IAutoSyncService AutoSyncService
+@implements IDisposable
+@implements IAsyncDisposable
+
+<div class="sync-status-indicator">
+    @if (isOnline)
+    {
+        <div class="sync-status online" title="Online - Cloud database connected">
+            <i class="fas fa-wifi"></i>
+            <span class="sync-status-text">Online</span>
+            @if (pendingCount > 0)
+            {
+                <span class="sync-badge">@pendingCount</span>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="sync-status offline" title="Offline - Working in offline mode">
+            <i class="fas fa-wifi-slash"></i>
+            <span class="sync-status-text">Offline</span>
+            @if (pendingCount > 0)
+            {
+                <span class="sync-badge">@pendingCount pending</span>
+            }
+        </div>
+    }
+
+    @if (isSyncing)
+    {
+        <div class="sync-progress" title="Synchronizing...">
+            <i class="fas fa-sync-alt fa-spin"></i>
+            <span>Syncing...</span>
+        </div>
+    }
+
+    @if (lastSyncTime.HasValue && isOnline)
+    {
+        <div class="sync-time" title="Last sync: @lastSyncTime.Value.ToString("g")">
+            <span>Last sync: @GetTimeAgo(lastSyncTime.Value)</span>
+        </div>
+    }
+</div>
+
+@code {
+    private bool isOnline = false;
+    private int pendingCount = 0;
+    private bool isSyncing = false;
+    private DateTime? lastSyncTime = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initial check
+        isOnline = await ConnectivityService.CheckCloudConnectivityAsync();
+        pendingCount = await SyncQueueService.GetPendingCountAsync();
+        isSyncing = AutoSyncService.IsSyncing;
+        lastSyncTime = AutoSyncService.LastSyncTime;
+
+        // Subscribe to events
+        ConnectivityService.ConnectivityChanged += OnConnectivityChanged;
+        ConnectivityService.StatusChanged += OnStatusChanged;
+
+        // Start periodic updates
+        _ = UpdateStatusPeriodically();
+    }
+
+    private async Task UpdateStatusPeriodically()
+    {
+        while (true)
+        {
+            await Task.Delay(10000); // Update every 10 seconds
+
+            try
+            {
+                pendingCount = await SyncQueueService.GetPendingCountAsync();
+                isSyncing = AutoSyncService.IsSyncing;
+                lastSyncTime = AutoSyncService.LastSyncTime;
+                StateHasChanged();
+            }
+            catch
+            {
+                // Continue updating even if there's an error
+            }
+        }
+    }
+
+    private void OnConnectivityChanged(object? sender, bool online)
+    {
+        isOnline = online;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnStatusChanged(object? sender, ConnectivityStatus status)
+    {
+        isOnline = status.IsOnline;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string GetTimeAgo(DateTime time)
+    {
+        var span = DateTime.Now - time;
+        if (span.TotalMinutes < 1)
+            return "just now";
+        if (span.TotalMinutes < 60)
+            return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24)
+            return $"{(int)span.TotalHours}h ago";
+        return $"{(int)span.TotalDays}d ago";
+    }
+
+    public void Dispose()
+    {
+        ConnectivityService.ConnectivityChanged -= OnConnectivityChanged;
+        ConnectivityService.StatusChanged -= OnStatusChanged;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
+}
+
+<style>
+    .sync-status-indicator {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 5px 10px;
+        background: #f5f5f5;
+        border-radius: 4px;
+        font-size: 0.9em;
+    }
+
+    .sync-status {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: 500;
+    }
+
+    .sync-status.online {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .sync-status.offline {
+        background: #f8d7da;
+        color: #721c24;
+    }
+
+    .sync-status-text {
+        font-size: 0.9em;
+    }
+
+    .sync-badge {
+        background: #007bff;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 0.8em;
+        font-weight: bold;
+    }
+
+    .sync-progress {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        color: #007bff;
+        font-size: 0.9em;
+    }
+
+    .sync-time {
+        font-size: 0.85em;
+        color: #666;
+    }
+
+    .fa-spin {
+        animation: fa-spin 2s infinite linear;
+    }
+
+    @@keyframes fa-spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+</style>
+

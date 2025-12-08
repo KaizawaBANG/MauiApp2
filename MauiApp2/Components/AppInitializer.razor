@@ -1,0 +1,15 @@
+@using MauiApp2.Services
+@inject IAutoSyncService AutoSyncService
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Auto-sync service starts automatically when created
+            // This component ensures it's initialized
+            await Task.CompletedTask;
+        }
+    }
+}
+

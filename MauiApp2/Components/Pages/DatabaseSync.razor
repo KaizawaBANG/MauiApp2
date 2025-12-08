@@ -1,0 +1,339 @@
+@page "/database-sync"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Components.Database
+@using System.Configuration
+@inject IAuthService AuthService
+@inject IDatabaseSyncService DatabaseSyncService
+@inject NavigationManager Navigation
+
+<link href="css/databasesync.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+    <div class="main-content">
+        <div class="content-header">
+            <h1>Database Synchronization</h1>
+        </div>
+
+        <div class="inventory-section">
+            <div class="tab-section">
+                <div class="tabs">
+                    <button class="tab active">Database Sync</button>
+                </div>
+            </div>
+
+            <div class="product-table-container">
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                <!-- Sync Controls -->
+                <div class="sync-controls">
+                    <button class="btn-sync" @onclick="StartSync" disabled="@(isSyncing || isTesting)">
+                        <i class="fas fa-sync-alt @(isSyncing ? "fa-spin" : "")"></i>
+                        <span>@(isSyncing ? "Syncing..." : "Sync to Cloud")</span>
+                    </button>
+                    <button class="btn-test" @onclick="TestConnections" disabled="@(isSyncing || isTesting)">
+                        <i class="fas fa-plug"></i>
+                        <span>Test Connections</span>
+                    </button>
+                </div>
+
+            <!-- Test Results -->
+            @if (testResults != null)
+            {
+                <div class="test-results">
+                    <h4>Connection Test Results</h4>
+                    <div class="test-item @(testResults.IsLocalConnected ? "success" : "error")">
+                        <i class="fas fa-@(testResults.IsLocalConnected ? "check-circle" : "times-circle")"></i>
+                        <span>Local Database: @(testResults.IsLocalConnected ? "Connected" : "Failed")</span>
+                        @if (!string.IsNullOrEmpty(testResults.LocalError))
+                        {
+                            <span class="error-text">(@testResults.LocalError)</span>
+                        }
+                    </div>
+                    <div class="test-item @(testResults.IsCloudConnected ? "success" : "error")">
+                        <i class="fas fa-@(testResults.IsCloudConnected ? "check-circle" : "times-circle")"></i>
+                        <span>Cloud Database: @(testResults.IsCloudConnected ? "Connected" : "Failed")</span>
+                        @if (!string.IsNullOrEmpty(testResults.CloudError))
+                        {
+                            <div class="error-text" style="margin-top: 5px; font-size: 0.9em; color: #dc3545;">
+                                <strong>Error:</strong> @testResults.CloudError
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <!-- Sync Progress -->
+            @if (isSyncing)
+            {
+                <div class="sync-progress">
+                    <div class="progress-header">
+                        <h4>Synchronization in Progress...</h4>
+                        <span class="progress-time">Started: @syncStartTime.ToString("HH:mm:ss")</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: @(GetProgressPercentage() + "%")"></div>
+                    </div>
+                    <div class="progress-text">
+                        Processing table @currentTableIndex of @totalTables...
+                    </div>
+                </div>
+            }
+
+            <!-- Sync Results -->
+            @if (syncResult != null && !isSyncing)
+            {
+                <div class="sync-results @(syncResult.IsSuccess ? "success" : "error")">
+                    <div class="results-header">
+                        <h4>
+                            <i class="fas fa-@(syncResult.IsSuccess ? "check-circle" : "times-circle")"></i>
+                            @(syncResult.IsSuccess ? "Synchronization Complete" : "Synchronization Failed")
+                        </h4>
+                        @if (syncResult.Duration.TotalSeconds > 0)
+                        {
+                            <span class="duration">Duration: @syncResult.Duration.ToString(@"mm\:ss")</span>
+                        }
+                    </div>
+
+                    @if (syncResult.IsSuccess)
+                    {
+                        <div class="results-summary">
+                            <div class="summary-item">
+                                <span class="label">Tables Processed:</span>
+                                <span class="value">@syncResult.TotalTablesProcessed</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="label">Rows Copied:</span>
+                                <span class="value">@syncResult.TotalRowsCopied.ToString("N0")</span>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(syncResult.ErrorMessage))
+                    {
+                        <div class="error-message">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            @syncResult.ErrorMessage
+                        </div>
+                    }
+
+                    <div class="results-log">
+                        <div class="log-header">
+                            <span>Sync Log</span>
+                            <button class="btn-copy" @onclick="CopyLogToClipboard">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                        </div>
+                        <div class="log-content">
+                            @foreach (var message in syncResult.Messages)
+                            {
+                                <div class="log-line">@message</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
+                <!-- Information Card -->
+                <div class="info-box">
+                    <h4><i class="fas fa-lightbulb"></i> Important Notes</h4>
+                    <ul>
+                        <li>Make sure all tables exist in the cloud database before syncing</li>
+                        <li>The sync process will skip rows that already exist (safe to run multiple times)</li>
+                        <li>Tables are synced in order to respect foreign key relationships</li>
+                        <li>Identity seeds are automatically reset after sync to prevent ID jumps</li>
+                        <li>This process may take several minutes depending on your data size</li>
+                        <li><strong>Local Database:</strong> Your local SQL Server database with existing data</li>
+                        <li><strong>Cloud Database:</strong> MonsterAPI cloud database (will receive synced data)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isSyncing = false;
+    private bool isTesting = false;
+    private SyncResult? syncResult = null;
+    private TestResult? testResults = null;
+    private string errorMessage = "";
+    private DateTime syncStartTime;
+    private int currentTableIndex = 0;
+    private int totalTables = 15;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+    }
+
+    private string GetLocalConnectionString()
+    {
+        try
+        {
+            var connString = ConfigurationManager.ConnectionStrings["DefaultConnection"]?.ConnectionString ?? "";
+            // Mask sensitive parts for display
+            if (connString.Contains("Password=", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = connString.Split(';');
+                var masked = parts.Select(p => p.Trim().StartsWith("Password=", StringComparison.OrdinalIgnoreCase) 
+                    ? "Password=***" 
+                    : p);
+                return string.Join("; ", masked);
+            }
+            return connString;
+        }
+        catch
+        {
+            return "Not configured";
+        }
+    }
+
+    private async Task StartSync()
+    {
+        isSyncing = true;
+        errorMessage = "";
+        syncResult = null;
+        syncStartTime = DateTime.Now;
+        currentTableIndex = 0;
+
+        try
+        {
+            var localConnString = ConfigurationManager.ConnectionStrings["DefaultConnection"]?.ConnectionString;
+            var cloudConnString = ConfigurationManager.ConnectionStrings["CloudConnection"]?.ConnectionString;
+
+            if (string.IsNullOrEmpty(localConnString))
+            {
+                errorMessage = "Local database connection string not found in App.config";
+                isSyncing = false;
+                return;
+            }
+            
+            if (string.IsNullOrEmpty(cloudConnString))
+            {
+                errorMessage = "Cloud database connection string not found in App.config. Please add 'CloudConnection' to connectionStrings.";
+                isSyncing = false;
+                return;
+            }
+
+            // Simulate progress updates
+            _ = UpdateProgress();
+
+            syncResult = await DatabaseSyncService.SyncDatabaseAsync(localConnString, cloudConnString);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error during sync: {ex.Message}";
+        }
+        finally
+        {
+            isSyncing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task UpdateProgress()
+    {
+        while (isSyncing && currentTableIndex < totalTables)
+        {
+            await Task.Delay(500);
+            currentTableIndex++;
+            StateHasChanged();
+        }
+    }
+
+    private double GetProgressPercentage()
+    {
+        if (totalTables == 0) return 0;
+        return (currentTableIndex / (double)totalTables) * 100;
+    }
+
+    private async Task TestConnections()
+    {
+        isTesting = true;
+        errorMessage = "";
+        testResults = new TestResult();
+
+        try
+        {
+            var localConnString = ConfigurationManager.ConnectionStrings["DefaultConnection"]?.ConnectionString;
+            var cloudConnString = ConfigurationManager.ConnectionStrings["CloudConnection"]?.ConnectionString;
+
+            if (!string.IsNullOrEmpty(localConnString))
+            {
+                try
+                {
+                    testResults.IsLocalConnected = await DatabaseSyncService.TestConnectionAsync(localConnString);
+                }
+                catch (Exception ex)
+                {
+                    testResults.IsLocalConnected = false;
+                    testResults.LocalError = ex.Message;
+                }
+            }
+            else
+            {
+                testResults.IsLocalConnected = false;
+                testResults.LocalError = "Connection string not found";
+            }
+
+            try
+            {
+                testResults.IsCloudConnected = await DatabaseSyncService.TestConnectionAsync(cloudConnString);
+            }
+            catch (Exception ex)
+            {
+                testResults.IsCloudConnected = false;
+                testResults.CloudError = ex.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error testing connections: {ex.Message}";
+        }
+        finally
+        {
+            isTesting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearError()
+    {
+        errorMessage = "";
+        StateHasChanged();
+    }
+
+    private async Task CopyLogToClipboard()
+    {
+        if (syncResult == null) return;
+
+        var logText = string.Join("\n", syncResult.Messages);
+        // Note: JavaScript interop would be needed for actual clipboard copy
+        // For now, just show a message
+        errorMessage = "Log copied to clipboard (placeholder - implement with JS interop if needed)";
+        StateHasChanged();
+    }
+
+    private class TestResult
+    {
+        public bool IsLocalConnected { get; set; }
+        public bool IsCloudConnected { get; set; }
+        public string LocalError { get; set; } = "";
+        public string CloudError { get; set; } = "";
+    }
+}
+

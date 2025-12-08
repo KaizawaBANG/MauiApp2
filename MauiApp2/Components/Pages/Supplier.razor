@@ -1,0 +1,1625 @@
+@page "/suppliers"
+
+@layout MainLayout
+
+@using MauiApp2.Services
+
+@using MauiApp2.Models
+
+@using SupplierModel = MauiApp2.Models.Supplier
+
+@using Microsoft.JSInterop
+
+@inject IAuthService AuthService
+
+@inject NavigationManager Navigation
+
+@inject ISupplierService SupplierService
+
+@inject IJSRuntime JSRuntime
+
+<link href="css/supplier.css" rel="stylesheet" />
+
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+
+    <Sidebar />
+
+    <div class="main-content">
+
+        <div class="content-header">
+
+            <h1>Supplier Management</h1>
+
+        </div>
+
+        <div class="inventory-section">
+
+            <div class="tab-section">
+
+                <div class="tabs">
+
+                    <button class="tab active">Supplier List</button>
+
+                </div>
+
+            </div>
+
+            <div class="product-table-container">
+
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+
+                {
+
+                    <div class="alert alert-error">
+
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+
+                        <span>@errorMessage</span>
+
+                        <button class="alert-close" @onclick="ClearErrorMessage"><i class="fas fa-times"></i></button>
+
+                    </div>
+
+                }
+
+                @if (!string.IsNullOrEmpty(successMessage))
+
+                {
+
+                    <div class="alert alert-success">
+
+                        <span class="alert-icon"><i class="fas fa-check-circle"></i></span>
+
+                        <span>@successMessage</span>
+
+                        <button class="alert-close" @onclick="ClearSuccessMessage"><i class="fas fa-times"></i></button>
+
+                    </div>
+
+                }
+
+                <!-- Loading Indicator -->
+                @if (isLoading)
+
+                {
+
+                    <div class="loading-indicator">
+
+                        <div class="spinner"></div>
+
+                        <span>Loading suppliers...</span>
+
+                    </div>
+
+                }
+
+                <div class="toolbar">
+
+                    <button class="add-item-btn" @onclick="ShowAddModal" disabled="@isLoading">
+                        <i class="fas fa-plus"></i>
+                        <span>Add Supplier</span>
+                    </button>
+
+                    <div class="search-container">
+
+                        <input type="text"
+                               class="search-input"
+                               placeholder="Search suppliers..."
+                               value="@searchQuery"
+                               @oninput="OnSearchInput"
+                               disabled="@isLoading" />
+
+                        <span class="search-icon"><i class="fas fa-search"></i></span>
+
+                    </div>
+
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="product-table">
+
+                    <thead>
+
+                        <tr>
+
+                            <th>Supplier Name</th>
+
+                            <th>Contact Number</th>
+
+                            <th>Email</th>
+
+                            <th>Status</th>
+
+                            <th>Created Date</th>
+
+                            <th>Modified Date</th>
+
+                            <th>Actions</th>
+
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                        @if (PaginatedSuppliers.Any())
+
+                        {
+
+                            @foreach (var supplier in PaginatedSuppliers)
+
+                            {
+
+                                <tr>
+
+                                    <td class="product-name-cell">@supplier.supplier_name</td>
+
+                                    <td>
+
+                                        @if (!string.IsNullOrEmpty(supplier.contact_number))
+
+                                        {
+
+                                            <span>@supplier.contact_number</span>
+
+                                        }
+
+                                        else
+
+                                        {
+
+                                            <span class="no-data">-</span>
+
+                                        }
+
+                                    </td>
+
+                                    <td>
+
+                                        @if (!string.IsNullOrEmpty(supplier.email))
+
+                                        {
+
+                                            <span>@supplier.email</span>
+
+                                        }
+
+                                        else
+
+                                        {
+
+                                            <span class="no-data">-</span>
+
+                                        }
+
+                                    </td>
+
+                                    <td>
+
+                                        <span class="status-badge @(supplier.is_active ? "status-active" : "status-inactive")">
+
+                                            @(supplier.is_active ? "Active" : "Inactive")
+
+                                        </span>
+
+                                    </td>
+
+                                    <td>
+
+                                        @supplier.created_date.ToString("MMM dd, yyyy")
+
+                                    </td>
+
+                                    <td>
+
+                                        @if (supplier.modified_date.HasValue)
+
+                                        {
+
+                                            <span>@supplier.modified_date.Value.ToString("MMM dd, yyyy")</span>
+
+                                        }
+
+                                        else
+
+                                        {
+
+                                            <span class="no-data">-</span>
+
+                                        }
+
+                                    </td>
+
+                                    <td>
+
+                                        <button class="edit-btn"
+                                                @onclick="() => ShowEditModal(supplier)"
+                                                disabled="@isLoading">
+                                            <i class="fas fa-edit"></i>
+                                            <span>Edit</span>
+                                        </button>
+
+                                    </td>
+
+                                </tr>
+
+                            }
+
+                        }
+
+                        else if (!isLoading)
+
+                        {
+
+                            <tr>
+
+                                <td colspan="7" class="empty-state-cell">
+                                    <div class="empty-state">
+                                        <i class="fas fa-folder-open empty-state-icon"></i>
+                                        @if (string.IsNullOrWhiteSpace(searchQuery))
+                                        {
+                                            <p class="empty-state-text">No suppliers found. Click "Add Supplier" to add your first supplier.</p>
+                                        }
+                                        else
+                                        {
+                                            <p class="empty-state-text">No suppliers match your search criteria.</p>
+                                        }
+                                    </div>
+                                </td>
+
+                            </tr>
+
+                        }
+
+                    </tbody>
+
+                    </table>
+                </div>
+
+                <!-- Mobile Card View -->
+                <div class="supplier-cards-container">
+                    @if (PaginatedSuppliers.Any())
+                    {
+                        @foreach (var supplier in PaginatedSuppliers)
+                        {
+                            <div class="supplier-card">
+                                <div class="supplier-card-header">
+                                    <h3 class="supplier-card-title">@supplier.supplier_name</h3>
+                                    <button class="edit-btn" @onclick="() => ShowEditModal(supplier)" disabled="@isLoading">
+                                        <i class="fas fa-edit"></i>
+                                        <span>Edit</span>
+                                    </button>
+                                </div>
+                                <div class="supplier-card-body">
+                                    <div class="supplier-info-group">
+                                        <span class="supplier-info-label">Contact Number</span>
+                                        <span class="supplier-info-value">@(string.IsNullOrEmpty(supplier.contact_number) ? "—" : supplier.contact_number)</span>
+                                    </div>
+                                    <div class="supplier-info-group">
+                                        <span class="supplier-info-label">Email</span>
+                                        <span class="supplier-info-value">@(string.IsNullOrEmpty(supplier.email) ? "—" : supplier.email)</span>
+                                    </div>
+                                    <div class="supplier-info-group">
+                                        <span class="supplier-info-label">Status</span>
+                                        <span class="supplier-info-value">
+                                            <span class="status-badge @(supplier.is_active ? "status-active" : "status-inactive")">
+                                                @(supplier.is_active ? "Active" : "Inactive")
+                                            </span>
+                                        </span>
+                                    </div>
+                                    <div class="supplier-info-group">
+                                        <span class="supplier-info-label">Created Date</span>
+                                        <span class="supplier-info-value">@supplier.created_date.ToString("MMM dd, yyyy")</span>
+                                    </div>
+                                    @if (supplier.modified_date.HasValue)
+                                    {
+                                        <div class="supplier-info-group">
+                                            <span class="supplier-info-label">Modified Date</span>
+                                            <span class="supplier-info-value">@supplier.modified_date.Value.ToString("MMM dd, yyyy")</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (!isLoading)
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-folder-open empty-state-icon"></i>
+                            @if (string.IsNullOrWhiteSpace(searchQuery))
+                            {
+                                <p class="empty-state-text">No suppliers found. Click "Add Supplier" to add your first supplier.</p>
+                            }
+                            else
+                            {
+                                <p class="empty-state-text">No suppliers match your search criteria.</p>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Pagination -->
+                @if (FilteredSuppliers.Any())
+
+                {
+
+                    <Pagination CurrentPage="@currentPage"
+                                PageSize="@pageSize"
+                                TotalItems="@FilteredSuppliers.Count()"
+                                PageChanged="@OnPageChanged"
+                                PageSizeChanged="@OnPageSizeChanged" />
+
+                }
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- Add Supplier Modal -->
+@if (showAddModal)
+
+{
+
+    <div class="modal-overlay">
+
+        <div class="modal-content" @onclick:stopPropagation="true">
+
+            <div class="modal-header">
+
+                <h3>Add New Supplier</h3>
+
+                <button class="modal-close" @onclick="ShowCancelAddModal"><i class="fas fa-times"></i></button>
+
+            </div>
+
+            <div class="modal-body">
+
+
+                <div class="form-container">
+
+                    <div class="form-group">
+
+                        <label>Supplier Name *</label>
+
+                        <input type="text"
+                               class="form-control @(hasAttemptedSubmit && HasError("SupplierName") ? "input-error" : "")"
+                               @bind="newSupplierName"
+                               placeholder="Enter supplier name"
+                               maxlength="100"
+                               disabled="@isLoading" />
+
+                        @if (hasAttemptedSubmit && HasError("SupplierName"))
+
+                        {
+
+                            <span class="field-error">@GetError("SupplierName")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>Contact Number</label>
+
+                        <div class="phone-input-wrapper">
+
+                            <span class="phone-prefix">+63</span>
+
+                            <input type="tel"
+                                   class="form-control phone-input"
+                                   value="@GetDisplayPhoneNumber(newContactNumber)"
+                                   @oninput="(e) => OnNewContactNumberInput(e)"
+                                   placeholder="9123456789"
+                                   maxlength="10"
+                                   disabled="@isLoading" />
+
+                        </div>
+
+                        <small class="form-help">Enter 10 digits (e.g., 9123456789)</small>
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>Email</label>
+
+                        <input type="email"
+                               class="form-control @(hasAttemptedSubmit && HasError("Email") ? "input-error" : "")"
+                               @bind="newEmail"
+                               placeholder="Enter email address (optional)"
+                               maxlength="100"
+                               disabled="@isLoading" />
+
+                        @if (hasAttemptedSubmit && HasError("Email"))
+
+                        {
+
+                            <span class="field-error">@GetError("Email")</span>
+
+                        }
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button class="btn-cancel" @onclick="ShowCancelAddModal" disabled="@isLoading">Cancel</button>
+
+                <button class="btn-submit" @onclick="ShowAddSupplierConfirmation" disabled="@isLoading">
+
+                    @if (isLoading)
+
+                    {
+
+                        <span class="button-spinner"></span>
+
+                    }
+
+                    Add Supplier
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+}
+
+<!-- Edit Supplier Modal -->
+@if (showEditModal && editingSupplier != null)
+
+{
+
+    <div class="modal-overlay">
+
+        <div class="modal-content" @onclick:stopPropagation="true">
+
+            <div class="modal-header">
+
+                <h3>Edit Supplier</h3>
+
+                <button class="modal-close" @onclick="ShowCancelEditModal"><i class="fas fa-times"></i></button>
+
+            </div>
+
+            <div class="modal-body">
+
+
+                <div class="form-container">
+
+                    <div class="form-group">
+
+                        <label>Supplier Name *</label>
+
+                        <input type="text"
+                               class="form-control @(hasAttemptedEditSubmit && HasEditError("SupplierName") ? "input-error" : "")"
+                               @bind="editSupplierName"
+                               placeholder="Enter supplier name"
+                               maxlength="100"
+                               disabled="@isLoading" />
+
+                        @if (hasAttemptedEditSubmit && HasEditError("SupplierName"))
+
+                        {
+
+                            <span class="field-error">@GetEditError("SupplierName")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>Contact Number</label>
+
+                        <div class="phone-input-wrapper">
+
+                            <span class="phone-prefix">+63</span>
+
+                            <input type="tel"
+                                   class="form-control phone-input"
+                                   value="@GetDisplayPhoneNumber(editContactNumber)"
+                                   @oninput="(e) => OnEditContactNumberInput(e)"
+                                   placeholder="9123456789"
+                                   maxlength="10"
+                                   disabled="@isLoading" />
+
+                        </div>
+
+                        <small class="form-help">Enter 10 digits (e.g., 9123456789)</small>
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>Email</label>
+
+                        <input type="email"
+                               class="form-control @(hasAttemptedEditSubmit && HasEditError("Email") ? "input-error" : "")"
+                               @bind="editEmail"
+                               placeholder="Enter email address (optional)"
+                               maxlength="100"
+                               disabled="@isLoading" />
+
+                        @if (hasAttemptedEditSubmit && HasEditError("Email"))
+
+                        {
+
+                            <span class="field-error">@GetEditError("Email")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>Status *</label>
+
+                        <select class="form-control"
+                                value="@(editIsActive.ToString().ToLower())"
+                                @onchange="OnEditStatusChanged"
+                                disabled="@isLoading">
+
+                            <option value="true">Active</option>
+
+                            <option value="false">Inactive</option>
+
+                        </select>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button class="btn-cancel" @onclick="ShowCancelEditModal" disabled="@isLoading">Cancel</button>
+
+                <button class="btn-submit" @onclick="ShowUpdateSupplierConfirmation" disabled="@isLoading">
+
+                    @if (isLoading)
+
+                    {
+
+                        <span class="button-spinner"></span>
+
+                    }
+
+                    Update Supplier
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+}
+
+<!-- Confirmation Modal for Add Supplier -->
+@if (showAddSupplierConfirmation)
+{
+    <div class="modal-overlay confirmation-modal-overlay">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header confirmation-modal-header">
+                <h3>Confirm Add Supplier</h3>
+                <button class="modal-close" @onclick="CloseAddSupplierConfirmation"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body confirmation-modal-body">
+                <div class="confirmation-message-box">
+                    <p class="confirmation-question">Are you sure you want to add this supplier?</p>
+                </div>
+                <div class="confirmation-details">
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Supplier Name:</span>
+                        <span class="confirmation-value">@newSupplierName</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Contact Number:</span>
+                        <span class="confirmation-value">@(string.IsNullOrWhiteSpace(newContactNumber) ? "N/A" : newContactNumber)</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Email:</span>
+                        <span class="confirmation-value">@(string.IsNullOrWhiteSpace(newEmail) ? "N/A" : newEmail)</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer confirmation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseAddSupplierConfirmation">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmAddSupplier">Confirm Add</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Confirmation Modal for Update Supplier -->
+@if (showUpdateSupplierConfirmation)
+{
+    <div class="modal-overlay confirmation-modal-overlay">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header confirmation-modal-header">
+                <h3>Confirm Update Supplier</h3>
+                <button class="modal-close" @onclick="CloseUpdateSupplierConfirmation"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body confirmation-modal-body">
+                <div class="confirmation-message-box">
+                    <p class="confirmation-question">Are you sure you want to update this supplier?</p>
+                </div>
+                <div class="confirmation-details">
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Supplier Name:</span>
+                        <span class="confirmation-value">@editSupplierName</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Contact Number:</span>
+                        <span class="confirmation-value">@(string.IsNullOrWhiteSpace(editContactNumber) ? "N/A" : editContactNumber)</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Email:</span>
+                        <span class="confirmation-value">@(string.IsNullOrWhiteSpace(editEmail) ? "N/A" : editEmail)</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Status:</span>
+                        <span class="confirmation-value">@(editIsActive ? "Active" : "Inactive")</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer confirmation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseUpdateSupplierConfirmation">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmUpdateSupplier">Confirm Update</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Add Supplier -->
+@if (showCancelAddModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Add Supplier?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelAddModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelAddModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelAddModal">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Edit Supplier -->
+@if (showCancelEditModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Edit Supplier?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelEditModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelEditModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelEditModal">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Success Modal -->
+@if (showSuccessModal)
+{
+    <div class="modal-overlay success-modal-overlay">
+        <div class="modal-content success-modal" @onclick:stopPropagation="true">
+            <div class="modal-header success-modal-header">
+                <h3>
+                    <i class="fas fa-check-circle"></i>
+                    Success!
+                </h3>
+                <button class="modal-close" @onclick="CloseSuccessModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body success-modal-body">
+                <div class="success-icon-container">
+                    <i class="fas fa-check-circle success-icon"></i>
+                </div>
+                <p class="success-message">@successModalMessage</p>
+            </div>
+            <div class="modal-footer success-modal-footer">
+                <button class="btn-submit" @onclick="CloseSuccessModal">OK</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+
+    private string searchQuery = "";
+
+    private List<SupplierModel> suppliers = new();
+
+    private bool showAddModal = false;
+
+    private bool showEditModal = false;
+
+    private bool showAddSupplierConfirmation = false;
+
+    private bool showUpdateSupplierConfirmation = false;
+
+    private bool showCancelAddModal = false;
+
+    private bool showCancelEditModal = false;
+
+    private bool showSuccessModal = false;
+
+    private string successModalMessage = "";
+
+    private SupplierModel? editingSupplier = null;
+
+    private bool isLoading = false;
+
+    // Track submit attempts for validation display
+
+    private bool hasAttemptedSubmit = false;
+
+    private bool hasAttemptedEditSubmit = false;
+
+    // Add form fields
+
+    private string newSupplierName = "";
+
+    private string newContactNumber = "";
+
+    private string newEmail = "";
+
+
+    // Edit form fields
+
+    private string editSupplierName = "";
+
+    private string editContactNumber = "";
+
+    private string editEmail = "";
+
+    private bool editIsActive = true;
+
+    // Messages and validation
+
+    private string errorMessage = "";
+
+    private string successMessage = "";
+
+    private List<string> validationErrors = new List<string>();
+
+    private List<string> editValidationErrors = new List<string>();
+
+    // Pagination
+
+    private int currentPage = 1;
+
+    private int pageSize = 10;
+
+    protected override async Task OnInitializedAsync()
+
+    {
+
+        if (!AuthService.IsAuthenticated)
+
+        {
+
+            Navigation.NavigateTo("/");
+
+            return;
+
+        }
+
+        await LoadSuppliers();
+
+    }
+
+    private async Task LoadSuppliers()
+
+    {
+
+        try
+
+        {
+
+            isLoading = true;
+
+            errorMessage = "";
+
+            StateHasChanged();
+
+            var allSuppliers = await SupplierService.GetSuppliersAsync();
+            suppliers = allSuppliers.OrderBy(s => s.supplier_id).ToList();
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error loading suppliers: {ex.Message}";
+
+            Console.WriteLine($"Error: {ex.Message}");
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+    private IEnumerable<SupplierModel> FilteredSuppliers
+
+    {
+
+        get
+
+        {
+
+            var filtered = string.IsNullOrWhiteSpace(searchQuery)
+                ? suppliers
+                : suppliers.Where(s =>
+                    s.supplier_name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    (s.contact_number != null && s.contact_number.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    (s.email != null && s.email.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    s.supplier_id.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+
+            return filtered.OrderBy(s => s.supplier_id);
+
+        }
+
+    }
+
+    private IEnumerable<SupplierModel> PaginatedSuppliers
+
+    {
+
+        get
+
+        {
+
+            var filtered = FilteredSuppliers.ToList();
+
+            return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
+
+        }
+
+    }
+
+    private void OnPageChanged(int page)
+
+    {
+
+        currentPage = page;
+
+        StateHasChanged();
+
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+
+    {
+
+        pageSize = newPageSize;
+
+        currentPage = 1;
+
+        StateHasChanged();
+
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+
+    {
+
+        searchQuery = e.Value?.ToString() ?? "";
+
+        currentPage = 1;
+
+    }
+
+
+    private void OnEditStatusChanged(ChangeEventArgs e)
+
+    {
+
+        editIsActive = e.Value?.ToString() == "true";
+
+        StateHasChanged();
+
+    }
+
+    // Phone number input handlers
+
+    private void OnNewContactNumberInput(ChangeEventArgs e)
+
+    {
+
+        var input = e.Value?.ToString() ?? "";
+
+        newContactNumber = FormatPhoneNumber(input);
+
+        StateHasChanged();
+
+    }
+
+    private void OnEditContactNumberInput(ChangeEventArgs e)
+
+    {
+
+        var input = e.Value?.ToString() ?? "";
+
+        editContactNumber = FormatPhoneNumber(input);
+
+        StateHasChanged();
+
+    }
+
+    private string FormatPhoneNumber(string input)
+
+    {
+
+        if (string.IsNullOrWhiteSpace(input))
+
+            return "";
+
+        // Remove all non-digit characters
+
+        var digits = new string(input.Where(char.IsDigit).ToArray());
+
+        // Limit to 10 digits (Philippines mobile numbers)
+
+        if (digits.Length > 10)
+
+            digits = digits.Substring(0, 10);
+
+        return digits;
+
+    }
+
+    private string GetDisplayPhoneNumber(string phoneNumber)
+
+    {
+
+        if (string.IsNullOrWhiteSpace(phoneNumber))
+
+            return "";
+
+        // Remove +63 if already present
+
+        var digits = phoneNumber.Replace("+63", "").Trim();
+
+        // Remove all non-digit characters
+
+        digits = new string(digits.Where(char.IsDigit).ToArray());
+
+        // Limit to 10 digits
+
+        if (digits.Length > 10)
+
+            digits = digits.Substring(0, 10);
+
+        return digits;
+
+    }
+
+    private string GetFullPhoneNumber(string phoneNumber)
+
+    {
+
+        if (string.IsNullOrWhiteSpace(phoneNumber))
+
+            return "";
+
+        var digits = GetDisplayPhoneNumber(phoneNumber);
+
+        return string.IsNullOrWhiteSpace(digits) ? "" : $"+63{digits}";
+
+    }
+
+    // Modal Methods
+
+    private void ShowAddModal()
+
+    {
+
+        showAddModal = true;
+
+        hasAttemptedSubmit = false; // Reset submit attempt flag
+
+        ClearMessages();
+
+        ResetAddForm();
+
+        StateHasChanged();
+
+    }
+
+    private void CloseAddModal()
+
+    {
+
+        showAddModal = false;
+
+        hasAttemptedSubmit = false; // Reset submit attempt flag
+
+        ResetAddForm();
+
+        StateHasChanged();
+
+    }
+
+    private void ShowCancelAddModal()
+    {
+        showCancelAddModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseCancelAddModal()
+    {
+        showCancelAddModal = false;
+        StateHasChanged();
+    }
+
+    private void ConfirmCancelAddModal()
+    {
+        showCancelAddModal = false;
+        CloseAddModal();
+    }
+
+    private void ShowEditModal(SupplierModel supplier)
+
+    {
+
+        editingSupplier = supplier;
+
+        showEditModal = true;
+
+        hasAttemptedEditSubmit = false; // Reset submit attempt flag
+
+        ClearMessages();
+
+        // Populate edit form
+
+        editSupplierName = supplier.supplier_name;
+
+        // Extract digits from contact number (remove +63 prefix if present)
+
+        editContactNumber = GetDisplayPhoneNumber(supplier.contact_number ?? "");
+
+        editEmail = supplier.email ?? "";
+
+        editIsActive = supplier.is_active;
+
+        StateHasChanged();
+
+    }
+
+    private void CloseEditModal()
+
+    {
+
+        showEditModal = false;
+
+        editingSupplier = null;
+
+        hasAttemptedEditSubmit = false; // Reset submit attempt flag
+
+        ResetEditForm();
+
+        StateHasChanged();
+
+    }
+
+    private void ShowCancelEditModal()
+    {
+        showCancelEditModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseCancelEditModal()
+    {
+        showCancelEditModal = false;
+        StateHasChanged();
+    }
+
+    private void ConfirmCancelEditModal()
+    {
+        showCancelEditModal = false;
+        CloseEditModal();
+    }
+
+    private void CloseSuccessModal()
+    {
+        showSuccessModal = false;
+        StateHasChanged();
+    }
+
+    // Form Methods
+
+    private void ResetAddForm()
+
+    {
+
+        newSupplierName = "";
+
+        newContactNumber = "";
+
+        newEmail = "";
+
+        validationErrors.Clear();
+
+        hasAttemptedSubmit = false;
+
+    }
+
+    private void ResetEditForm()
+
+    {
+
+        editSupplierName = "";
+
+        editContactNumber = "";
+
+        editEmail = "";
+
+        editIsActive = true;
+
+        editValidationErrors.Clear();
+
+        hasAttemptedEditSubmit = false;
+
+    }
+
+    private void ClearMessages()
+
+    {
+
+        errorMessage = "";
+
+        successMessage = "";
+
+        validationErrors.Clear();
+
+        editValidationErrors.Clear();
+
+    }
+
+    private void ClearErrorMessage() => errorMessage = "";
+
+    private void ClearSuccessMessage() => successMessage = "";
+
+    // Validation Methods
+
+    private void ValidateAddForm()
+
+    {
+
+        validationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(newSupplierName))
+
+            AddValidationError("SupplierName", "Supplier name is required");
+
+        else if (newSupplierName.Trim().Length < 2)
+
+            AddValidationError("SupplierName", "Supplier name must be at least 2 characters long");
+
+        else if (suppliers.Any(s => s.supplier_name.Equals(newSupplierName.Trim(), StringComparison.OrdinalIgnoreCase)))
+
+            AddValidationError("SupplierName", "Supplier name already exists");
+
+        if (!string.IsNullOrWhiteSpace(newEmail) && !IsValidEmail(newEmail))
+
+            AddValidationError("Email", "Please enter a valid email address");
+
+    }
+
+    private void ValidateEditForm()
+
+    {
+
+        editValidationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(editSupplierName))
+
+            AddEditValidationError("SupplierName", "Supplier name is required");
+
+        else if (editSupplierName.Trim().Length < 2)
+
+            AddEditValidationError("SupplierName", "Supplier name must be at least 2 characters long");
+
+        else if (suppliers.Any(s => s.supplier_name.Equals(editSupplierName.Trim(), StringComparison.OrdinalIgnoreCase) && s.supplier_id != editingSupplier?.supplier_id))
+
+            AddEditValidationError("SupplierName", "Supplier name already exists");
+
+        if (!string.IsNullOrWhiteSpace(editEmail) && !IsValidEmail(editEmail))
+
+            AddEditValidationError("Email", "Please enter a valid email address");
+
+    }
+
+    private bool IsValidEmail(string email)
+
+    {
+
+        try
+
+        {
+
+            var addr = new System.Net.Mail.MailAddress(email);
+
+            return addr.Address == email;
+
+        }
+
+        catch
+
+        {
+
+            return false;
+
+        }
+
+    }
+
+    private void AddValidationError(string field, string message)
+
+    {
+
+        validationErrors.Add($"{field}: {message}");
+
+    }
+
+    private void AddEditValidationError(string field, string message)
+
+    {
+
+        editValidationErrors.Add($"{field}: {message}");
+
+    }
+
+    private bool HasError(string field)
+
+    {
+
+        return validationErrors.Any(error => error.StartsWith($"{field}:"));
+
+    }
+
+    private bool HasEditError(string field)
+
+    {
+
+        return editValidationErrors.Any(error => error.StartsWith($"{field}:"));
+
+    }
+
+    private string GetError(string field)
+
+    {
+
+        return validationErrors.FirstOrDefault(error => error.StartsWith($"{field}:"))?.Split(':')[1]?.Trim() ?? "";
+
+    }
+
+    private string GetEditError(string field)
+
+    {
+
+        return editValidationErrors.FirstOrDefault(error => error.StartsWith($"{field}:"))?.Split(':')[1]?.Trim() ?? "";
+
+    }
+
+    private bool IsFormValid
+
+    {
+
+        get
+
+        {
+
+            // Only validate if user has attempted to submit
+
+            if (!hasAttemptedSubmit)
+
+                return true;
+
+            ValidateAddForm();
+
+            return validationErrors.Count == 0 && !string.IsNullOrWhiteSpace(newSupplierName);
+
+        }
+
+    }
+
+    private bool IsEditFormValid
+
+    {
+
+        get
+
+        {
+
+            // Only validate if user has attempted to submit
+
+            if (!hasAttemptedEditSubmit)
+
+                return true;
+
+            ValidateEditForm();
+
+            return editValidationErrors.Count == 0 && !string.IsNullOrWhiteSpace(editSupplierName);
+
+        }
+
+    }
+
+    // Confirmation Modal Methods
+    private void ShowAddSupplierConfirmation()
+    {
+        Console.WriteLine("ShowAddSupplierConfirmation called");
+        hasAttemptedSubmit = true;
+        errorMessage = "";
+        validationErrors.Clear();
+        StateHasChanged();
+
+        ValidateAddForm();
+
+        if (validationErrors.Any())
+        {
+            errorMessage = "Please fix the validation errors before submitting.";
+            Console.WriteLine($"Validation failed. Errors: {string.Join(", ", validationErrors)}");
+            StateHasChanged();
+            return;
+        }
+
+        Console.WriteLine("Validation passed, showing confirmation modal");
+        showAddSupplierConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseAddSupplierConfirmation()
+    {
+        showAddSupplierConfirmation = false;
+        StateHasChanged();
+    }
+
+    private void ShowUpdateSupplierConfirmation()
+    {
+        hasAttemptedEditSubmit = true;
+        errorMessage = "";
+        editValidationErrors.Clear();
+        StateHasChanged();
+
+        ValidateEditForm();
+
+        if (editValidationErrors.Any())
+        {
+            errorMessage = "Please fix the validation errors before submitting.";
+            StateHasChanged();
+            return;
+        }
+
+        if (editingSupplier == null)
+        {
+            errorMessage = "Error: No supplier selected for editing.";
+            StateHasChanged();
+            return;
+        }
+
+        showUpdateSupplierConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseUpdateSupplierConfirmation()
+    {
+        showUpdateSupplierConfirmation = false;
+        StateHasChanged();
+    }
+
+    // CRUD Operations
+
+    private async Task ConfirmAddSupplier()
+    {
+        Console.WriteLine("ConfirmAddSupplier called");
+        showAddSupplierConfirmation = false;
+        StateHasChanged();
+        await AddSupplier();
+    }
+
+    private async Task AddSupplier()
+
+    {
+
+        try
+
+        {
+
+            isLoading = true;
+
+            StateHasChanged();
+
+            var newSupplier = new SupplierModel
+
+            {
+
+                supplier_name = newSupplierName.Trim(),
+
+                contact_number = string.IsNullOrWhiteSpace(newContactNumber) ? null : GetFullPhoneNumber(newContactNumber),
+
+                email = string.IsNullOrWhiteSpace(newEmail) ? null : newEmail.Trim(),
+
+                is_active = true,
+
+                created_date = DateTime.Now
+
+            };
+
+            var supplierId = await SupplierService.CreateSupplierAsync(newSupplier);
+
+            await LoadSuppliers(); // Refresh the list
+
+            CloseAddModal();
+
+            await Task.Delay(100);
+
+            successModalMessage = $"Supplier '{newSupplierName}' added successfully!";
+            showSuccessModal = true;
+            StateHasChanged();
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error adding supplier: {ex.Message}";
+
+            Console.WriteLine($"AddSupplier error: {ex}");
+
+            // Keep the add modal open if there's an error
+            // Don't close it so user can see the error and retry
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+    private async Task ConfirmUpdateSupplier()
+    {
+        showUpdateSupplierConfirmation = false;
+        await UpdateSupplier();
+    }
+
+    private async Task UpdateSupplier()
+
+    {
+
+        try
+
+        {
+
+            isLoading = true;
+
+            StateHasChanged();
+
+            var updatedSupplier = new SupplierModel
+
+            {
+
+                supplier_id = editingSupplier.supplier_id,
+
+                supplier_name = editSupplierName.Trim(),
+
+                contact_number = string.IsNullOrWhiteSpace(editContactNumber) ? null : GetFullPhoneNumber(editContactNumber),
+
+                email = string.IsNullOrWhiteSpace(editEmail) ? null : editEmail.Trim(),
+
+                is_active = editIsActive,
+
+                created_date = editingSupplier.created_date
+
+            };
+
+            var success = await SupplierService.UpdateSupplierAsync(updatedSupplier);
+
+            if (success)
+
+            {
+
+                await LoadSuppliers(); // Refresh the list
+
+                CloseEditModal();
+
+                await Task.Delay(100);
+
+                successModalMessage = $"Supplier '{editSupplierName}' updated successfully!";
+                showSuccessModal = true;
+                StateHasChanged();
+
+            }
+
+            else
+
+            {
+
+                errorMessage = "Failed to update supplier. Please try again.";
+
+            }
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error updating supplier: {ex.Message}";
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+}
+

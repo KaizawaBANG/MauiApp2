@@ -1,0 +1,575 @@
+@page "/reports/inventory"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Models
+@using CategoryModel = MauiApp2.Models.Category
+@using BrandModel = MauiApp2.Models.Brand
+@using InventoryReportModel = MauiApp2.Services.InventoryReport
+@using Microsoft.JSInterop
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject IReportService ReportService
+@inject ICategoryService CategoryService
+@inject IBrandService BrandService
+@inject IJSRuntime JSRuntime
+
+<link href="css/Reports.css" rel="stylesheet" />
+<link href="css/pagination.css" rel="stylesheet" />
+
+@if (!CanAccessReports())
+{
+    <div class="dashboard-wrapper">
+        <Sidebar />
+        <div class="main-content">
+            <div class="content-header">
+                <h1>Access Denied</h1>
+                <p>You do not have permission to access this page.</p>
+                <p>Only Inventory Manager and Administrator roles can access Reports.</p>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="dashboard-wrapper">
+        <Sidebar />
+        <div class="main-content">
+            <div class="content-header">
+                <h1>Inventory Report</h1>
+            </div>
+
+        <div class="inventory-section">
+            <div class="tab-section">
+                <div class="tabs">
+                    <button class="tab active">Inventory Report</button>
+                </div>
+            </div>
+
+            <div class="product-table-container">
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                <!-- Filters Section -->
+                <div class="report-filters">
+                    <div class="filter-row">
+                        <div class="form-group">
+                            <label>Category</label>
+                            <select class="form-control" @bind="selectedCategoryId" @bind:event="onchange">
+                                <option value="0">All Categories</option>
+                                @foreach (var category in availableCategories)
+                                {
+                                    <option value="@category.category_id">@category.category_name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Brand</label>
+                            <select class="form-control" @bind="selectedBrandId" @bind:event="onchange">
+                                <option value="0">All Brands</option>
+                                @foreach (var brand in availableBrands)
+                                {
+                                    <option value="@brand.brand_id">@brand.brand_name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button class="btn-generate" @onclick="LoadReport">
+                                <i class="fas fa-search"></i>
+                                <span>Generate Report</span>
+                            </button>
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button class="btn-export" @onclick="ExportToPdf" disabled="@(!reportData.Any())">
+                                <i class="fas fa-file-pdf"></i>
+                                <span>Export PDF</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search -->
+                @if (reportData.Any())
+                {
+                    <div class="toolbar">
+                        <div class="search-container">
+                            <input type="text"
+                                   class="search-input"
+                                   placeholder="Search by product name, SKU, category, or brand..."
+                                   value="@searchTerm"
+                                   @oninput="OnSearchInput" />
+                            <span class="search-icon"><i class="fas fa-search"></i></span>
+                        </div>
+                    </div>
+                }
+
+                <!-- Report Table -->
+                @if (reportData.Any())
+                {
+                    <div id="report-content" class="report-content">
+                        <div class="report-header">
+                            <h2>Inventory Report</h2>
+                            <p>Generated: @DateTime.Now.ToString("MM/dd/yyyy HH:mm")</p>
+                        </div>
+                        <div class="table-wrapper">
+                            <table id="report-table" class="product-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" @onclick='() => SortBy("ProductName")'>
+                                    Product Name
+                                    @if (sortColumn == "ProductName")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("SKU")'>
+                                    SKU
+                                    @if (sortColumn == "SKU")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("Category")'>
+                                    Category
+                                    @if (sortColumn == "Category")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("Brand")'>
+                                    Brand
+                                    @if (sortColumn == "Brand")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("Quantity")'>
+                                    Quantity
+                                    @if (sortColumn == "Quantity")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("CostPrice")'>
+                                    Cost Price
+                                    @if (sortColumn == "CostPrice")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("SellPrice")'>
+                                    Sell Price
+                                    @if (sortColumn == "SellPrice")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("StockValue")'>
+                                    Stock Value
+                                    @if (sortColumn == "StockValue")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("Status")'>
+                                    Status
+                                    @if (sortColumn == "Status")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in PaginatedReportData)
+                            {
+                                <tr class="@(row.Quantity <= 5 ? "low-stock" : "")">
+                                    <td>@row.ProductName</td>
+                                    <td>@row.SKU</td>
+                                    <td>@row.Category</td>
+                                    <td>@row.Brand</td>
+                                    <td>@row.Quantity</td>
+                                    <td>₱@row.CostPrice.ToString("N2")</td>
+                                    <td>₱@row.SellPrice.ToString("N2")</td>
+                                    <td>₱@row.StockValue.ToString("N2")</td>
+                                    <td>
+                                        <span class="status-badge @(row.Status == "Active" ? "active" : "inactive")">
+                                            @row.Status
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="total-row">
+                                <td colspan="4"><strong>Total</strong></td>
+                                <td><strong>@FilteredReportData.Sum(r => r.Quantity)</strong></td>
+                                <td colspan="2"></td>
+                                <td><strong>₱@FilteredReportData.Sum(r => r.StockValue).ToString("N2")</strong></td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        @if (FilteredReportData.Any())
+                        {
+                            <Pagination CurrentPage="@currentPage"
+                                        PageSize="@pageSize"
+                                        TotalItems="@FilteredReportData.Count()"
+                                        PageChanged="@OnPageChanged"
+                                        PageSizeChanged="@OnPageSizeChanged" />
+                        }
+                    </div>
+                }
+
+                <!-- Mobile Card View -->
+                <div class="report-cards-container">
+                    @if (reportData.Any())
+                    {
+                        @foreach (var row in PaginatedReportData)
+                        {
+                            <div class="report-card-item">
+                                <div class="report-card-header">
+                                    <h3 class="report-card-title">@row.ProductName</h3>
+                                    <span class="status-badge @(row.Status == "Active" ? "active" : "inactive")">@row.Status</span>
+                                </div>
+                                <div class="report-card-body">
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">SKU</span>
+                                        <span class="report-info-value">@row.SKU</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Category</span>
+                                        <span class="report-info-value">@row.Category</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Brand</span>
+                                        <span class="report-info-value">@row.Brand</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Quantity</span>
+                                        <span class="report-info-value @(row.Quantity <= 5 ? "low-stock" : "")">@row.Quantity</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Cost Price</span>
+                                        <span class="report-info-value">₱@row.CostPrice.ToString("N2")</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Sell Price</span>
+                                        <span class="report-info-value">₱@row.SellPrice.ToString("N2")</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Stock Value</span>
+                                        <span class="report-info-value total-amount">₱@row.StockValue.ToString("N2")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (isLoaded)
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-boxes empty-state-icon"></i>
+                            <p class="empty-state-text">No inventory data found for the selected filters.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-info-circle empty-state-icon"></i>
+                            <p class="empty-state-text">Click "Generate Report" to view inventory data.</p>
+                        </div>
+                    }
+                </div>
+
+                @if (reportData.Any() && FilteredReportData.Any())
+                {
+                    <div class="report-summary-footer">
+                        <div class="summary-totals">
+                            <div class="summary-total-item">
+                                <span class="summary-total-label">Total Items:</span>
+                                <span class="summary-total-value">@FilteredReportData.Count()</span>
+                            </div>
+                            <div class="summary-total-item">
+                                <span class="summary-total-label">Total Quantity:</span>
+                                <span class="summary-total-value">@FilteredReportData.Sum(r => r.Quantity)</span>
+                            </div>
+                            <div class="summary-total-item">
+                                <span class="summary-total-label">Total Stock Value:</span>
+                                <span class="summary-total-value grand-total">₱@FilteredReportData.Sum(r => r.StockValue).ToString("N2")</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    </div>
+    }
+}
+
+@code {
+    private int selectedCategoryId = 0;
+    private int selectedBrandId = 0;
+    private List<InventoryReportModel> reportData = new List<InventoryReportModel>();
+    private List<CategoryModel> availableCategories = new List<CategoryModel>();
+    private List<BrandModel> availableBrands = new List<BrandModel>();
+    private string errorMessage = "";
+    private bool isLoaded = false;
+    
+    // Search and Sort
+    private string searchTerm = "";
+    private string sortColumn = "ProductName";
+    private string sortDirection = "asc";
+    
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        await LoadCategoriesAndBrands();
+        await LoadReport(); // Auto-load on page load
+    }
+
+    private async Task LoadCategoriesAndBrands()
+    {
+        try
+        {
+            availableCategories = (await CategoryService.GetCategoriesAsync()).ToList();
+            availableBrands = (await BrandService.GetBrandsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading categories/brands: {ex.Message}";
+        }
+    }
+
+    private async Task LoadReport()
+    {
+        try
+        {
+            errorMessage = "";
+            isLoaded = false;
+            StateHasChanged();
+
+            int? categoryId = selectedCategoryId > 0 ? selectedCategoryId : null;
+            int? brandId = selectedBrandId > 0 ? selectedBrandId : null;
+
+            reportData = await ReportService.GetInventoryReportAsync(categoryId, brandId);
+            isLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading report: {ex.Message}";
+            Console.WriteLine($"Error loading inventory report: {ex}");
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportToPdf()
+    {
+        if (!reportData.Any())
+            return;
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("pdfExport.exportTableToPdf", 
+                "report-table", 
+                "Inventory Report",
+                $"InventoryReport_{DateTime.Now:yyyyMMdd_HHmmss}.pdf");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error exporting PDF: {ex.Message}";
+            Console.WriteLine($"Error exporting PDF: {ex}");
+            StateHasChanged();
+        }
+    }
+
+    private void ClearError()
+    {
+        errorMessage = "";
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+        {
+            sortDirection = sortDirection == "asc" ? "desc" : "asc";
+        }
+        else
+        {
+            sortColumn = column;
+            sortDirection = "asc";
+        }
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private IEnumerable<InventoryReportModel> FilteredReportData
+    {
+        get
+        {
+            var filtered = reportData.AsEnumerable();
+
+            if (!string.IsNullOrEmpty(searchTerm))
+            {
+                filtered = filtered.Where(r => 
+                    r.ProductName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    r.SKU.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    r.Category.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    r.Brand.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Sort
+            switch (sortColumn)
+            {
+                case "ProductName":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.ProductName) 
+                        : filtered.OrderByDescending(r => r.ProductName);
+                    break;
+                case "SKU":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.SKU) 
+                        : filtered.OrderByDescending(r => r.SKU);
+                    break;
+                case "Category":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.Category) 
+                        : filtered.OrderByDescending(r => r.Category);
+                    break;
+                case "Brand":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.Brand) 
+                        : filtered.OrderByDescending(r => r.Brand);
+                    break;
+                case "Quantity":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.Quantity) 
+                        : filtered.OrderByDescending(r => r.Quantity);
+                    break;
+                case "CostPrice":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.CostPrice) 
+                        : filtered.OrderByDescending(r => r.CostPrice);
+                    break;
+                case "SellPrice":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.SellPrice) 
+                        : filtered.OrderByDescending(r => r.SellPrice);
+                    break;
+                case "StockValue":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.StockValue) 
+                        : filtered.OrderByDescending(r => r.StockValue);
+                    break;
+                case "Status":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.Status) 
+                        : filtered.OrderByDescending(r => r.Status);
+                    break;
+            }
+
+            return filtered;
+        }
+    }
+
+    private IEnumerable<InventoryReportModel> PaginatedReportData
+    {
+        get
+        {
+            var filtered = FilteredReportData.ToList();
+            return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
+        }
+    }
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+    {
+        pageSize = newPageSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    // Check if user can access reports
+    // Only Inventory Manager and Administrator can access
+    private bool CanAccessReports()
+    {
+        if (AuthService == null)
+            return false;
+
+        string userRole = (AuthService.CurrentUserRoleName ?? "").Trim();
+        return userRole.Equals("Inventory Manager", StringComparison.OrdinalIgnoreCase) ||
+               userRole.Equals("Administrator", StringComparison.OrdinalIgnoreCase);
+    }
+}
+

@@ -1,0 +1,457 @@
+﻿@page "/dashboard"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Models
+@inject IAuthService AuthService
+@inject IUserService UserService
+@inject ISalesOrderService SalesOrderService
+@inject IPurchaseOrderService PurchaseOrderService
+@inject IProductService ProductService
+@inject ISupplierService SupplierService
+@inject NavigationManager Navigation
+
+<link href="css/dashboard.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+    <main class="main-content">
+        <!-- Header with Dashboard title -->
+        <header class="header">
+            <h1 class="page-title">Dashboard</h1>
+        </header>
+
+        <div class="dashboard-section">
+            <div class="stats-container">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-label">Total Sales (Today)</span>
+                            <div class="stat-icon sales-icon-bg">
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value">₱@todaySales.ToString("N2")</div>
+                        <div class="stat-change positive">
+                            <i class="fas fa-arrow-up"></i> @todayTransactions transactions
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-label">Total Sales (This Month)</span>
+                            <div class="stat-icon sales-icon-bg">
+                                <i class="fas fa-chart-bar"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value">₱@monthlySales.ToString("N2")</div>
+                        <div class="stat-change positive">
+                            @monthlyTransactions transactions
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-label">Total Products</span>
+                            <div class="stat-icon product-icon-bg">
+                                <i class="fas fa-box"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value">@totalProducts.ToString("N0")</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-label">Pending POs</span>
+                            <div class="stat-icon pending-icon-bg">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value">@pendingOrders.ToString("N0")</div>
+                        <div class="stat-change neutral">
+                            @deliveredOrders delivered this month
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-label">Total Suppliers</span>
+                            <div class="stat-icon supplier-icon-bg">
+                                <i class="fas fa-truck"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value">@totalSuppliers.ToString("N0")</div>
+                        <div class="stat-change neutral">
+                            @activeSuppliers active
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-label">Total Users</span>
+                            <div class="stat-icon user-icon-bg">
+                                <i class="fas fa-users"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value">@totalUsers.ToString("N0")</div>
+                        <div class="stat-change neutral">
+                            Active users
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-section">
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title-section">
+                            <h2 class="chart-title">Sales Analytics</h2>
+                            <p class="chart-subtitle">Monthly revenue performance and trends</p>
+                        </div>
+                        <div class="chart-controls">
+                            <div class="chart-date-controls">
+                                <div class="form-group">
+                                    <label>Start Date</label>
+                                    <input type="date" class="form-control date-input" value="@chartStartDate.ToString("yyyy-MM-dd")" @onchange="OnStartDateChanged" />
+                                </div>
+                                <div class="form-group">
+                                    <label>End Date</label>
+                                    <input type="date" class="form-control date-input" value="@chartEndDate.ToString("yyyy-MM-dd")" @onchange="OnEndDateChanged" />
+                                </div>
+                                <div class="form-group">
+                                    <label>&nbsp;</label>
+                                    <button class="btn-generate" @onclick="LoadChartData">
+                                        <i class="fas fa-search"></i> Apply
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-metrics">
+                        <div class="metric-card">
+                            <div class="metric-value">₱@chartTotalRevenue.ToString("N2")</div>
+                            <div class="metric-label">Total Revenue</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value">₱@chartAverageDaily.ToString("N2")</div>
+                            <div class="metric-label">Average Daily</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value">@chartTransactionCount.ToString("N0")</div>
+                            <div class="metric-label">Transactions</div>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper">
+                        @if (chartDataPoints.Any())
+                        {
+                            <svg viewBox="0 0 1000 450" class="line-chart">
+                                <!-- Grid Lines -->
+                                <line x1="80" y1="50" x2="80" y2="380" stroke="#f0f0f0" stroke-width="1" />
+                                <line x1="80" y1="380" x2="920" y2="380" stroke="#f0f0f0" stroke-width="1" />
+
+                                @foreach (var gridLine in chartGridLines)
+                                {
+                                    var gridY = gridLine.Y;
+                                    var gridLabelY = gridY + 5;
+                                    <line x1="80" y1="@gridY" x2="920" y2="@gridY" stroke="#f0f0f0" stroke-width="1" stroke-dasharray="3,3" />
+                                    @((MarkupString)$"<text x=\"70\" y=\"{gridLabelY}\" font-size=\"12\" fill=\"#666\" text-anchor=\"end\">{gridLine.Label}</text>")
+                                }
+
+                                <!-- Sales Line -->
+                                @if (chartPathPoints.Any())
+                                {
+                                    <polyline points="@string.Join(" ", chartPathPoints)"
+                                              fill="none"
+                                              stroke="#3b82f6"
+                                              stroke-width="3"
+                                              stroke-linecap="round"
+                                              stroke-linejoin="round" />
+
+                                    @foreach (var point in chartPointData)
+                                    {
+                                        var pointX = point.X;
+                                        var pointLabel = point.Label;
+                                        <circle cx="@pointX" cy="@point.Y" r="4" fill="#3b82f6" />
+                                        @((MarkupString)$"<text x=\"{pointX}\" y=\"400\" font-size=\"11\" fill=\"#666\" text-anchor=\"middle\">{pointLabel}</text>")
+                                    }
+                                }
+                            </svg>
+                        }
+                        else
+                        {
+                            <div class="no-chart-data">
+                                <i class="fas fa-chart-line"></i>
+                                <p>No sales data available for the selected period.</p>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Activity Section -->
+            <div class="activity-section">
+                <div class="activity-grid">
+                    <!-- Recent Sales -->
+                    <div class="activity-card">
+                        <div class="activity-header">
+                            <h3>Recent Sales</h3>
+                            <a href="/sales-history" class="view-all-link">View All</a>
+                        </div>
+                        <div class="activity-list">
+                            @if (recentSales.Any())
+                            {
+                                @foreach (var sale in recentSales.Take(5))
+                                {
+                                    <div class="activity-item">
+                                        <div class="activity-icon sales-icon">
+                                            <i class="fas fa-receipt"></i>
+                                        </div>
+                                        <div class="activity-content">
+                                            <div class="activity-title">@sale.sales_order_number</div>
+                                            <div class="activity-meta">@sale.sales_date.ToString("MM/dd/yyyy HH:mm")</div>
+                                        </div>
+                                        <div class="activity-amount">₱@sale.total_amount.ToString("N2")</div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="no-activity">
+                                    <p>No recent sales</p>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+@code {
+    // Statistics data
+    private int totalUsers = 0;
+    private int totalProducts = 0;
+    private int totalSuppliers = 0;
+    private int activeSuppliers = 0;
+    private int pendingOrders = 0;
+    private int deliveredOrders = 0;
+    private decimal todaySales = 0;
+    private int todayTransactions = 0;
+    private decimal monthlySales = 0;
+    private int monthlyTransactions = 0;
+    
+    // Chart data
+    private DateTime chartStartDate = DateTime.Now.AddDays(-90).Date;
+    private DateTime chartEndDate = DateTime.Now.Date;
+    private List<ChartDataPoint> chartDataPoints = new List<ChartDataPoint>();
+    private List<string> chartPathPoints = new List<string>();
+    private List<ChartGridLine> chartGridLines = new List<ChartGridLine>();
+    private List<ChartPointData> chartPointData = new List<ChartPointData>();
+    private decimal chartMinAmount = 0;
+    private decimal chartMaxAmount = 0;
+    private decimal chartTotalRevenue = 0;
+    private decimal chartAverageDaily = 0;
+    private int chartTransactionCount = 0;
+    
+    // Recent activity
+    private List<SalesOrder> recentSales = new List<SalesOrder>();
+    
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        isLoading = true;
+        try
+        {
+            // Load users
+            var users = await UserService.GetUsersAsync();
+            totalUsers = users.Count;
+
+            // Load products
+            var products = await ProductService.GetProductsAsync();
+            totalProducts = products.Count;
+
+            // Load suppliers
+            var suppliers = await SupplierService.GetSuppliersAsync();
+            totalSuppliers = suppliers.Count;
+            activeSuppliers = suppliers.Count(s => s.is_active == true);
+
+            // Load purchase orders
+            var purchaseOrders = await PurchaseOrderService.GetAllPurchaseOrdersAsync();
+            pendingOrders = purchaseOrders.Count(po => po.status == "Pending");
+            var thisMonth = DateTime.Now.AddDays(-DateTime.Now.Day + 1);
+            deliveredOrders = purchaseOrders.Count(po => po.status == "Delivered" && po.order_date >= thisMonth);
+
+            // Load sales orders
+            var salesOrders = await SalesOrderService.GetAllSalesOrdersAsync();
+            
+            // Today's sales
+            var today = DateTime.Now.Date;
+            var todaySalesList = salesOrders.Where(s => s.sales_date.Date == today).ToList();
+            todaySales = todaySalesList.Sum(s => s.total_amount);
+            todayTransactions = todaySalesList.Count;
+
+            // This month's sales
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var monthlySalesList = salesOrders.Where(s => s.sales_date >= thisMonthStart).ToList();
+            monthlySales = monthlySalesList.Sum(s => s.total_amount);
+            monthlyTransactions = monthlySalesList.Count;
+
+            // Recent sales (last 5)
+            recentSales = salesOrders.OrderByDescending(s => s.sales_date).Take(5).ToList();
+
+            // Load chart data
+            await LoadChartData();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading dashboard data: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadChartData()
+    {
+        try
+        {
+            var startDate = chartStartDate.Date;
+            var endDate = chartEndDate.Date;
+
+            if (startDate > endDate)
+            {
+                // Swap dates if start is after end
+                var temp = startDate;
+                startDate = endDate;
+                endDate = temp;
+                chartStartDate = startDate;
+                chartEndDate = endDate;
+            }
+
+            var salesOrders = await SalesOrderService.GetAllSalesOrdersAsync();
+            var filteredSales = salesOrders.Where(s => s.sales_date.Date >= startDate && s.sales_date.Date <= endDate).ToList();
+
+            // Group by date
+            var grouped = filteredSales
+                .GroupBy(s => s.sales_date.Date)
+                .Select(g => new ChartDataPoint
+                {
+                    Date = g.Key,
+                    Amount = g.Sum(s => s.total_amount),
+                    Count = g.Count()
+                })
+                .OrderBy(c => c.Date)
+                .ToList();
+
+            chartDataPoints = grouped;
+            chartTotalRevenue = filteredSales.Sum(s => s.total_amount);
+            chartTransactionCount = filteredSales.Count;
+            chartAverageDaily = grouped.Any() ? grouped.Average(c => c.Amount) : 0;
+
+            // Calculate chart path points and grid lines
+            if (grouped.Any())
+            {
+                chartMinAmount = grouped.Min(c => c.Amount);
+                chartMaxAmount = grouped.Max(c => c.Amount);
+                var range = chartMaxAmount - chartMinAmount;
+                if (range == 0) range = 1;
+
+                var chartHeight = 330;
+                var chartWidth = 840;
+                var padding = 80;
+                var pointCount = grouped.Count;
+                var pointSpacing = pointCount > 1 ? (chartWidth) / (pointCount - 1) : 0;
+
+                // Generate grid lines
+                chartGridLines.Clear();
+                for (int i = 1; i <= 5; i++)
+                {
+                    var y = 50 + (i * 66);
+                    var labelValue = chartMinAmount + (range * ((decimal)i / 5));
+                    chartGridLines.Add(new ChartGridLine
+                    {
+                        Y = y,
+                        Label = $"₱{(labelValue / 1000):F0}k"
+                    });
+                }
+
+                // Generate path points and point data
+                chartPathPoints.Clear();
+                chartPointData.Clear();
+                for (int i = 0; i < grouped.Count; i++)
+                {
+                    var x = (double)(padding + (i * pointSpacing));
+                    var normalizedAmount = range > 0 ? (grouped[i].Amount - chartMinAmount) / range : 0;
+                    var y = (double)(380 - (normalizedAmount * chartHeight));
+                    chartPathPoints.Add($"{x},{y}");
+                    
+                    chartPointData.Add(new ChartPointData
+                    {
+                        X = x,
+                        Y = y,
+                        Label = grouped[i].Date.ToString("MM/dd")
+                    });
+                }
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading chart data: {ex.Message}");
+        }
+    }
+
+    private async Task OnStartDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            chartStartDate = date.Date;
+            if (chartStartDate > chartEndDate)
+            {
+                chartEndDate = chartStartDate;
+            }
+        }
+    }
+
+    private async Task OnEndDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            chartEndDate = date.Date;
+            if (chartStartDate > chartEndDate)
+            {
+                chartStartDate = chartEndDate;
+            }
+        }
+    }
+
+    private class ChartDataPoint
+    {
+        public DateTime Date { get; set; }
+        public decimal Amount { get; set; }
+        public int Count { get; set; }
+    }
+
+    private class ChartGridLine
+    {
+        public int Y { get; set; }
+        public string Label { get; set; } = string.Empty;
+    }
+
+    private class ChartPointData
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+        public string Label { get; set; } = string.Empty;
+    }
+}

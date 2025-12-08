@@ -1,0 +1,662 @@
+@page "/stockin"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Models
+@using SupplierModel = MauiApp2.Models.Supplier
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject IPurchaseOrderService PurchaseOrderService
+@inject IStockInService StockInService
+@inject IProductService ProductService
+@inject ISupplierService SupplierService
+
+<link href="css/pagination.css" rel="stylesheet" />
+<link href="css/stockin-receive.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+    <div class="main-content">
+        <div class="content-header">
+            <h1>Stock In</h1>
+        </div>
+
+        <div class="inventory-section">
+            <div class="tab-section">
+                <div class="tabs">
+                    <button class="tab active">Receive Stock</button>
+                </div>
+            </div>
+
+            <div class="product-table-container">
+                <!-- Error Alert -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                <!-- Success Alert -->
+                @if (!string.IsNullOrEmpty(successMessage))
+                {
+                    <div class="alert alert-success">
+                        <span class="alert-icon"><i class="fas fa-check-circle"></i></span>
+                        <span>@successMessage</span>
+                        <button class="alert-close" @onclick="ClearSuccess"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                <!-- Stock In Form -->
+                <div class="stock-in-form">
+                    <div class="form-section">
+                        <h3>Receive Stock from Purchase Order</h3>
+                    
+                    <div class="form-group">
+                        <label>Purchase Order *</label>
+                        @if (!pendingPOs.Any())
+                        {
+                            <div class="no-po-message">
+                                <p><i class="fas fa-info-circle"></i> No purchase orders available for stock in. Purchase orders must be marked as "Delivered" and not already stocked in. Please mark a purchase order as "Delivered" in the Purchase Order Management page.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <select class="form-control" value="@selectedPOId" @onchange="OnPOSelected">
+                                <option value="0">Select Purchase Order</option>
+                                @foreach (var po in pendingPOs)
+                                {
+                                    var supplierDisplay = GetSupplierDisplayName(po);
+                                    <option value="@po.po_id">@po.po_number - @supplierDisplay (@po.status)</option>
+                                }
+                            </select>
+                        }
+                    </div>
+
+                    @if (selectedPOId > 0 && poItems.Any())
+                    {
+                        var selectedPO = pendingPOs.FirstOrDefault(p => p.po_id == selectedPOId);
+                        @if (selectedPO != null)
+                        {
+                            <div class="po-info-section">
+                                <div class="po-info-card">
+                                    <div class="po-info-row">
+                                        <span class="po-info-label">Supplier:</span>
+                                        <span class="po-info-value">@GetSupplierDisplayName(selectedPO)</span>
+                                    </div>
+                                    <div class="po-info-row">
+                                        <span class="po-info-label">Order Date:</span>
+                                        <span class="po-info-value">@selectedPO.order_date.ToString("MM/dd/yyyy")</span>
+                                    </div>
+                                    <div class="po-info-row">
+                                        <span class="po-info-label">Expected Date:</span>
+                                        <span class="po-info-value">@selectedPO.expected_date.ToString("MM/dd/yyyy")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        
+                        <div class="items-section">
+                            <h4>Items to Receive</h4>
+                            <table class="items-table">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>SKU</th>
+                                        <th>Ordered</th>
+                                        <th>Unit Cost</th>
+                                        <th>Received</th>
+                                        <th>Rejected</th>
+                                        <th>Reason</th>
+                                        <th>Remarks</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in receivingItems)
+                                    {
+                                        var poItem = poItems.FirstOrDefault(i => i.product_id == item.product_id);
+                                        var orderedQty = poItem?.quantity_ordered ?? 0;
+                                        var totalEntered = item.quantity_received + item.quantity_rejected;
+                                        var isValid = totalEntered == orderedQty;
+                                        <tr class="@(isValid ? "" : "validation-error-row")">
+                                            <td>@(poItem?.product_name ?? GetProductName(item.product_id))</td>
+                                            <td>@(poItem?.product_sku ?? "")</td>
+                                            <td><strong>@orderedQty</strong></td>
+                                            <td>₱@poItem?.unit_cost.ToString("N2")</td>
+                                            <td>
+                                                <input type="number" 
+                                                       class="quantity-input @(isValid ? "" : "input-error")" 
+                                                       value="@item.quantity_received" 
+                                                       @oninput="@((ChangeEventArgs e) => UpdateReceivedQuantity(item, e))"
+                                                       min="0" 
+                                                       step="1" />
+                                            </td>
+                                            <td>
+                                                <input type="number" 
+                                                       class="quantity-input @(isValid ? "" : "input-error")" 
+                                                       value="@item.quantity_rejected" 
+                                                       @oninput="@((ChangeEventArgs e) => UpdateRejectedQuantity(item, e))"
+                                                       min="0" 
+                                                       step="1" />
+                                            </td>
+                                            <td>
+                                                @if (item.quantity_rejected > 0)
+                                                {
+                                                    <select class="form-control rejection-reason-select" 
+                                                            value="@item.rejection_reason" 
+                                                            @onchange="@((ChangeEventArgs e) => UpdateRejectionReason(item, e))">
+                                                        <option value="">Select Reason</option>
+                                                        <option value="Damaged">Damaged</option>
+                                                        <option value="Defective">Defective</option>
+                                                        <option value="Wrong Item">Wrong Item</option>
+                                                        <option value="Expired">Expired</option>
+                                                        <option value="Other">Other</option>
+                                                    </select>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (item.quantity_rejected > 0)
+                                                {
+                                                    <input type="text" 
+                                                           class="form-control remarks-input" 
+                                                           value="@item.rejection_remarks" 
+                                                           @oninput="@((ChangeEventArgs e) => UpdateRejectionRemarks(item, e))"
+                                                           placeholder="Optional remarks..." />
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                        @if (!isValid && orderedQty > 0)
+                                        {
+                                            <tr class="validation-message-row">
+                                                <td colspan="8" class="validation-error-msg">
+                                                    <i class="fas fa-exclamation-circle"></i> 
+                                                    Received (@item.quantity_received) + Rejected (@item.quantity_rejected) = @totalEntered. 
+                                                    Must equal Ordered (@orderedQty).
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Notes (Optional)</label>
+                            <textarea class="form-control" rows="3" @bind="notes" placeholder="Add any notes about this stock receipt..."></textarea>
+                        </div>
+
+                        <div class="form-actions">
+                            <button class="btn-cancel" @onclick="CancelReceive">Cancel</button>
+                            <button class="btn-submit" @onclick="ShowReceiveConfirmation" disabled="@(isSubmitting || !receivingItems.Any() || !IsFormValid)">
+                                @if (isSubmitting)
+                                {
+                                    <span class="button-spinner"></span>
+                                    <span>Receiving...</span>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-check"></i>
+                                    <span>Receive Stock</span>
+                                }
+                            </button>
+                        </div>
+                    }
+                    else if (selectedPOId > 0 && !poItems.Any())
+                    {
+                        <div class="no-items">
+                            <p>No items found for this purchase order.</p>
+                        </div>
+                    }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Success Modal -->
+@if (showSuccessModal)
+{
+    <div class="modal-overlay success-modal-overlay">
+        <div class="modal-content success-modal" @onclick:stopPropagation="true">
+            <div class="modal-header success-modal-header">
+                <h3>
+                    <i class="fas fa-check-circle"></i>
+                    Success!
+                </h3>
+                <button class="modal-close" @onclick="CloseSuccessModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body success-modal-body">
+                <div class="success-icon-container">
+                    <i class="fas fa-check-circle success-icon"></i>
+                </div>
+                <p class="success-message">@successModalMessage</p>
+            </div>
+            <div class="modal-footer success-modal-footer">
+                <button class="btn-submit" @onclick="CloseSuccessModal">OK</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Confirmation Modal for Receive Stock -->
+@if (showReceiveConfirmation)
+{
+    <div class="modal-overlay confirmation-modal-overlay">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header confirmation-modal-header">
+                <h3>Confirm Receive Stock</h3>
+                <button class="modal-close" @onclick="CloseReceiveConfirmation"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body confirmation-modal-body">
+                <div class="confirmation-message-box">
+                    <p class="confirmation-question">Are you sure you want to receive this stock?</p>
+                </div>
+                <div class="confirmation-details">
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Purchase Order:</span>
+                        <span class="confirmation-value">@(pendingPOs.FirstOrDefault(p => p.po_id == selectedPOId)?.po_number ?? "N/A")</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Total Items:</span>
+                        <span class="confirmation-value">@receivingItems.Count</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Total Received:</span>
+                        <span class="confirmation-value">@receivingItems.Sum(i => i.quantity_received)</span>
+                    </div>
+                    @if (receivingItems.Any(i => i.quantity_rejected > 0))
+                    {
+                        <div class="confirmation-detail-item">
+                            <span class="confirmation-label">Total Rejected:</span>
+                            <span class="confirmation-value">@receivingItems.Sum(i => i.quantity_rejected)</span>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer confirmation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseReceiveConfirmation">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmReceiveStock">Confirm Receive</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<PurchaseOrder> pendingPOs = new();
+    private List<PurchaseOrderItem> poItems = new();
+    private List<StockInItem> receivingItems = new();
+    private List<Product> products = new();
+    private List<SupplierModel> suppliers = new();
+    
+    private int selectedPOId = 0;
+    private string notes = "";
+    private string errorMessage = "";
+    private string successMessage = "";
+    private bool isSubmitting = false;
+    private bool showSuccessModal = false;
+    private string successModalMessage = "";
+    private bool showReceiveConfirmation = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            errorMessage = "";
+            
+            // Load suppliers first (needed for fallback)
+            suppliers = await SupplierService.GetSuppliersAsync();
+            
+            // Load pending purchase orders
+            pendingPOs = await PurchaseOrderService.GetPendingPurchaseOrdersAsync();
+            
+            // Load products for display
+            products = await ProductService.GetProductsAsync();
+            
+            if (!pendingPOs.Any())
+            {
+                // Don't show as error, just informational
+                Console.WriteLine("No pending purchase orders found.");
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading data: {ex.Message}";
+            Console.WriteLine($"Error in LoadData: {ex}");
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnPOSelected(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int poId) && poId > 0)
+        {
+            selectedPOId = poId;
+            await LoadPOItems();
+        }
+        else
+        {
+            selectedPOId = 0;
+            poItems.Clear();
+            receivingItems.Clear();
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadPOItems()
+    {
+        try
+        {
+            errorMessage = "";
+            poItems = await PurchaseOrderService.GetPurchaseOrderItemsAsync(selectedPOId);
+            
+            if (!poItems.Any())
+            {
+                errorMessage = "No items found for this purchase order.";
+                receivingItems.Clear();
+                return;
+            }
+            
+            // Initialize receiving items with ordered quantities
+            receivingItems = poItems.Select(item => new StockInItem
+            {
+                product_id = item.product_id,
+                quantity_received = item.quantity_ordered, // Default to ordered quantity
+                quantity_rejected = 0, // Start with 0 rejected
+                rejection_reason = null,
+                rejection_remarks = null,
+                unit_cost = item.unit_cost,
+                quantity_ordered = item.quantity_ordered // Store ordered quantity for validation
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading purchase order items: {ex.Message}";
+            poItems.Clear();
+            receivingItems.Clear();
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private void ShowReceiveConfirmation()
+    {
+        if (selectedPOId == 0 || !receivingItems.Any())
+        {
+            errorMessage = "Please select a purchase order and ensure items are loaded.";
+            StateHasChanged();
+            return;
+        }
+
+        // Validate quantities - Received + Rejected must equal Ordered
+        var validationErrors = new List<string>();
+        foreach (var item in receivingItems)
+        {
+            var poItem = poItems.FirstOrDefault(i => i.product_id == item.product_id);
+            if (poItem != null)
+            {
+                var orderedQty = poItem.quantity_ordered;
+                var totalEntered = item.quantity_received + item.quantity_rejected;
+                
+                if (totalEntered != orderedQty)
+                {
+                    var productName = poItem.product_name ?? $"Product #{item.product_id}";
+                    validationErrors.Add($"{productName}: Received ({item.quantity_received}) + Rejected ({item.quantity_rejected}) = {totalEntered}, but Ordered = {orderedQty}. They must be equal.");
+                }
+                
+                if (item.quantity_received < 0 || item.quantity_rejected < 0)
+                {
+                    var productName = poItem.product_name ?? $"Product #{item.product_id}";
+                    validationErrors.Add($"{productName}: Quantities cannot be negative.");
+                }
+                
+                if (item.quantity_rejected > 0 && string.IsNullOrWhiteSpace(item.rejection_reason))
+                {
+                    var productName = poItem.product_name ?? $"Product #{item.product_id}";
+                    validationErrors.Add($"{productName}: Rejection reason is required when items are rejected.");
+                }
+            }
+        }
+        
+        if (validationErrors.Any())
+        {
+            errorMessage = "Please fix the following validation errors:\n" + string.Join("\n", validationErrors);
+            StateHasChanged();
+            return;
+        }
+
+        showReceiveConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseReceiveConfirmation()
+    {
+        showReceiveConfirmation = false;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmReceiveStock()
+    {
+        showReceiveConfirmation = false;
+        await ReceiveStock();
+    }
+
+    private async Task ReceiveStock()
+    {
+        isSubmitting = true;
+        errorMessage = "";
+        successMessage = "";
+
+        try
+        {
+            var userId = AuthService.CurrentUserId;
+            if (userId == 0)
+            {
+                errorMessage = "User not authenticated. Please log in again.";
+                isSubmitting = false;
+                StateHasChanged();
+                return;
+            }
+
+            // Save item count before resetting
+            int itemCount = receivingItems.Count;
+
+            // Receive stock
+            await StockInService.ReceiveStockFromPurchaseOrderAsync(selectedPOId, receivingItems, notes, userId);
+
+            // Reset form
+            await ResetForm();
+            
+            // Reload pending POs (the received one should be gone)
+            await LoadData();
+
+            await Task.Delay(100);
+
+            // Show success modal
+            successModalMessage = $"Stock received successfully! {itemCount} item(s) added to inventory.";
+            showSuccessModal = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error receiving stock: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseSuccessModal()
+    {
+        showSuccessModal = false;
+        successModalMessage = "";
+        StateHasChanged();
+    }
+
+    private async Task ResetForm()
+    {
+        selectedPOId = 0;
+        poItems.Clear();
+        receivingItems.Clear();
+        notes = "";
+        await LoadData();
+    }
+
+    private async Task CancelReceive()
+    {
+        await ResetForm();
+        ClearError();
+        ClearSuccess();
+    }
+
+    private string GetProductName(int productId)
+    {
+        var product = products.FirstOrDefault(p => p.product_id == productId);
+        return product?.product_name ?? $"Product #{productId}";
+    }
+
+    private string GetSupplierDisplayName(PurchaseOrder po)
+    {
+        // First try supplier_name from PO (loaded from database)
+        if (!string.IsNullOrWhiteSpace(po.supplier_name))
+        {
+            return po.supplier_name;
+        }
+        
+        // Fallback to supplier list lookup
+        if (po.supplier_id > 0 && suppliers != null && suppliers.Any())
+        {
+            var supplier = suppliers.FirstOrDefault(s => s.supplier_id == po.supplier_id);
+            if (supplier != null && !string.IsNullOrWhiteSpace(supplier.supplier_name))
+            {
+                return supplier.supplier_name;
+            }
+        }
+        
+        // Last resort
+        return po.supplier_id > 0 ? $"Supplier #{po.supplier_id}" : "Unknown Supplier";
+    }
+
+    private string GetSupplierName(int supplierId)
+    {
+        if (supplierId <= 0) return "Unknown Supplier";
+        
+        if (suppliers != null && suppliers.Any())
+        {
+            var supplier = suppliers.FirstOrDefault(s => s.supplier_id == supplierId);
+            if (supplier != null && !string.IsNullOrWhiteSpace(supplier.supplier_name))
+            {
+                return supplier.supplier_name;
+            }
+        }
+        
+        return $"Supplier #{supplierId}";
+    }
+
+    private void ClearError()
+    {
+        errorMessage = "";
+    }
+
+    private void ClearSuccess()
+    {
+        successMessage = "";
+    }
+
+    private void UpdateReceivedQuantity(StockInItem item, ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int quantity) && quantity >= 0)
+        {
+            item.quantity_received = quantity;
+            StateHasChanged();
+        }
+    }
+
+    private void UpdateRejectedQuantity(StockInItem item, ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int quantity) && quantity >= 0)
+        {
+            item.quantity_rejected = quantity;
+            // Clear reason and remarks if rejected quantity becomes 0
+            if (quantity == 0)
+            {
+                item.rejection_reason = null;
+                item.rejection_remarks = null;
+            }
+            StateHasChanged();
+        }
+    }
+
+    private void UpdateRejectionReason(StockInItem item, ChangeEventArgs e)
+    {
+        item.rejection_reason = e.Value?.ToString();
+        StateHasChanged();
+    }
+
+    private void UpdateRejectionRemarks(StockInItem item, ChangeEventArgs e)
+    {
+        item.rejection_remarks = e.Value?.ToString();
+        StateHasChanged();
+    }
+
+    private bool IsFormValid
+    {
+        get
+        {
+            if (!receivingItems.Any() || selectedPOId == 0)
+                return false;
+
+            foreach (var item in receivingItems)
+            {
+                var poItem = poItems.FirstOrDefault(i => i.product_id == item.product_id);
+                if (poItem != null)
+                {
+                    var orderedQty = poItem.quantity_ordered;
+                    var totalEntered = item.quantity_received + item.quantity_rejected;
+                    
+                    // Must equal ordered quantity
+                    if (totalEntered != orderedQty)
+                        return false;
+                    
+                    // Cannot be negative
+                    if (item.quantity_received < 0 || item.quantity_rejected < 0)
+                        return false;
+                    
+                    // If rejected > 0, reason is required
+                    if (item.quantity_rejected > 0 && string.IsNullOrWhiteSpace(item.rejection_reason))
+                        return false;
+                }
+            }
+            
+            return true;
+        }
+    }
+}
+

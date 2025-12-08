@@ -1,0 +1,113 @@
+﻿@inherits LayoutComponentBase
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>QuadTech</title>
+    <base href="~/" />
+    <link href="css/app.css" rel="stylesheet" />
+    <link rel='stylesheet' href='https://cdn-uicons.flaticon.com/uicons-solid-rounded/css/uicons-solid-rounded.css'>
+
+
+    <!-- Conditionally load page-specific CSS -->
+    @if (CurrentPage == "login")
+    {
+        <link href="css/login.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "register")
+    {
+        <link href="css/register.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "dashboard")
+    {
+        <link href="css/Dashboard.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "ordering")
+    {
+        <link href="css/Ordering.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "products")
+    {
+        <link href="css/ProductList.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "purchase-orders")
+    {
+        <link href="css/StockIn.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "stockin")
+    {
+        <link href="css/StockIn.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "stockout")
+    {
+        <link href="css/StockOut.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "adjust")
+    {
+        <link href="css/StockAdjustment.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "users")
+    {
+        <link href="css/userlist.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "category")
+    {
+        <link href="css/category.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "sale-transaction")
+    {
+        <link href="css/saletransaction.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "sales-history")
+    {
+        <link href="css/StockIn.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "inventory-transactions")
+    {
+        <link href="css/StockIn.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "reports")
+    {
+        <link href="css/Reports.css" rel="stylesheet" />
+    }
+    else if (CurrentPage == "database-sync")
+    {
+        <link href="css/databasesync.css" rel="stylesheet" />
+    }
+</head>
+<body>
+    <AppInitializer />
+    <div>
+        @Body
+    </div>
+</body>
+</html>
+
+@code {
+    private string CurrentPage => GetCurrentPage();
+
+    private string GetCurrentPage()
+    {
+        var uri = NavigationManager.Uri;
+        if (uri.Contains("/register")) return "register";
+        if (uri.Contains("/login") || uri == "/") return "login";
+        if (uri.Contains("/dashboard")) return "dashboard";
+        if (uri.Contains("/ordering")) return "ordering";
+        if (uri.Contains("/products")) return "products";
+        if (uri.Contains("/purchase-orders")) return "purchase-orders";
+        if (uri.Contains("/stockout")) return "stockout";
+        if (uri.Contains("/adjust")) return "adjust";
+        if (uri.Contains("/category")) return "category";
+        if (uri.Contains("/users")) return "users";
+        if (uri.Contains("/sale-transaction")) return "sale-transaction";
+        if (uri.Contains("/sales-history")) return "sales-history";
+        if (uri.Contains("/inventory-transactions")) return "inventory-transactions";
+        if (uri.Contains("/reports/")) return "reports";
+        if (uri.Contains("/database-sync")) return "database-sync";
+        return "other";
+    }
+
+    [Inject] private NavigationManager NavigationManager { get; set; } = default!;
+}

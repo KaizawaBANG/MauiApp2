@@ -1,0 +1,612 @@
+@page "/reports/purchase-order"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Models
+@using SupplierModel = MauiApp2.Models.Supplier
+@using PurchaseOrderReportModel = MauiApp2.Services.PurchaseOrderReport
+@using Microsoft.JSInterop
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject IReportService ReportService
+@inject ISupplierService SupplierService
+@inject IJSRuntime JSRuntime
+
+<link href="css/Reports.css" rel="stylesheet" />
+<link href="css/pagination.css" rel="stylesheet" />
+
+@if (!CanAccessReports())
+{
+    <div class="dashboard-wrapper">
+        <Sidebar />
+        <div class="main-content">
+            <div class="content-header">
+                <h1>Access Denied</h1>
+                <p>You do not have permission to access this page.</p>
+                <p>Only Inventory Manager and Administrator roles can access Reports.</p>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="dashboard-wrapper">
+        <Sidebar />
+        <div class="main-content">
+            <div class="content-header">
+                <h1>Purchase Order Report</h1>
+            </div>
+
+        <div class="inventory-section">
+            <div class="tab-section">
+                <div class="tabs">
+                    <button class="tab active">Purchase Order Report</button>
+                </div>
+            </div>
+
+            <div class="product-table-container">
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                <!-- Filters Section -->
+                <div class="report-filters">
+                    <!-- Quick Date Presets -->
+                    <div class="date-presets">
+                        <button class="preset-btn @(selectedPreset == "today" ? "active" : "")" @onclick='() => SetDatePreset("today")'>Today</button>
+                        <button class="preset-btn @(selectedPreset == "last7" ? "active" : "")" @onclick='() => SetDatePreset("last7")'>Last 7 Days</button>
+                        <button class="preset-btn @(selectedPreset == "last30" ? "active" : "")" @onclick='() => SetDatePreset("last30")'>Last 30 Days</button>
+                        <button class="preset-btn @(selectedPreset == "thismonth" ? "active" : "")" @onclick='() => SetDatePreset("thismonth")'>This Month</button>
+                        <button class="preset-btn @(selectedPreset == "lastmonth" ? "active" : "")" @onclick='() => SetDatePreset("lastmonth")'>Last Month</button>
+                        <button class="preset-btn @(selectedPreset == "thisyear" ? "active" : "")" @onclick='() => SetDatePreset("thisyear")'>This Year</button>
+                        <button class="preset-btn @(selectedPreset == "custom" ? "active" : "")" @onclick='() => SetDatePreset("custom")'>Custom</button>
+                    </div>
+
+                    <div class="filter-row">
+                        <div class="form-group">
+                            <label>Start Date</label>
+                            <input type="date" class="form-control" value="@(startDate?.ToString("yyyy-MM-dd"))" @onchange="OnStartDateChanged" />
+                        </div>
+                        <div class="form-group">
+                            <label>End Date</label>
+                            <input type="date" class="form-control" value="@(endDate?.ToString("yyyy-MM-dd"))" @onchange="OnEndDateChanged" />
+                        </div>
+                        <div class="form-group">
+                            <label>Supplier</label>
+                            <select class="form-control" @bind="selectedSupplierId" @bind:event="onchange">
+                                <option value="0">All Suppliers</option>
+                                @foreach (var supplier in availableSuppliers)
+                                {
+                                    <option value="@supplier.supplier_id">@supplier.supplier_name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Status</label>
+                            <select class="form-control" @bind="selectedStatus" @bind:event="onchange">
+                                <option value="">All Statuses</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Delivered">Delivered</option>
+                                <option value="Cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button class="btn-generate" @onclick="LoadReport">
+                                <i class="fas fa-search"></i>
+                                <span>Generate Report</span>
+                            </button>
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button class="btn-export" @onclick="ExportToPdf" disabled="@(!reportData.Any())">
+                                <i class="fas fa-file-pdf"></i>
+                                <span>Export PDF</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search -->
+                @if (reportData.Any())
+                {
+                    <div class="toolbar">
+                        <div class="search-container">
+                            <input type="text"
+                                   class="search-input"
+                                   placeholder="Search by PO number or supplier name..."
+                                   value="@searchTerm"
+                                   @oninput="OnSearchInput" />
+                            <span class="search-icon"><i class="fas fa-search"></i></span>
+                        </div>
+                    </div>
+                }
+
+                <!-- Report Table -->
+                @if (reportData.Any())
+                {
+                    <div id="report-content" class="report-content">
+                        <div class="report-header">
+                            <h2>Purchase Order Report</h2>
+                            <p>@(startDate.HasValue && endDate.HasValue ? $"Period: {startDate.Value.ToString("MM/dd/yyyy")} - {endDate.Value.ToString("MM/dd/yyyy")}" : "Generated: " + DateTime.Now.ToString("MM/dd/yyyy HH:mm"))</p>
+                        </div>
+                        <div class="table-wrapper">
+                            <table id="report-table" class="product-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" @onclick='() => SortBy("PurchaseOrderNumber")'>
+                                    PO Number
+                                    @if (sortColumn == "PurchaseOrderNumber")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("OrderDate")'>
+                                    Order Date
+                                    @if (sortColumn == "OrderDate")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("ExpectedDeliveryDate")'>
+                                    Expected Delivery
+                                    @if (sortColumn == "ExpectedDeliveryDate")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("SupplierName")'>
+                                    Supplier
+                                    @if (sortColumn == "SupplierName")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("Status")'>
+                                    Status
+                                    @if (sortColumn == "Status")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("ItemCount")'>
+                                    Item Count
+                                    @if (sortColumn == "ItemCount")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                                <th class="sortable" @onclick='() => SortBy("TotalAmount")'>
+                                    Total Amount
+                                    @if (sortColumn == "TotalAmount")
+                                    {
+                                        <i class="fas fa-sort-@(sortDirection == "asc" ? "up" : "down")"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-sort sort-inactive"></i>
+                                    }
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in PaginatedReportData)
+                            {
+                                <tr>
+                                    <td>@row.PurchaseOrderNumber</td>
+                                    <td>@row.OrderDate.ToString("MM/dd/yyyy")</td>
+                                    <td>@(row.ExpectedDeliveryDate.HasValue ? row.ExpectedDeliveryDate.Value.ToString("MM/dd/yyyy") : "N/A")</td>
+                                    <td>@row.SupplierName</td>
+                                    <td>
+                                        <span class="status-badge status-@row.Status.ToLower()">
+                                            @row.Status
+                                        </span>
+                                    </td>
+                                    <td>@row.ItemCount</td>
+                                    <td><strong>₱@row.TotalAmount.ToString("N2")</strong></td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="total-row">
+                                <td colspan="5"><strong>Total</strong></td>
+                                <td><strong>@FilteredReportData.Sum(r => r.ItemCount)</strong></td>
+                                <td><strong>₱@FilteredReportData.Sum(r => r.TotalAmount).ToString("N2")</strong></td>
+                            </tr>
+                        </tfoot>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        @if (FilteredReportData.Any())
+                        {
+                            <Pagination CurrentPage="@currentPage"
+                                        PageSize="@pageSize"
+                                        TotalItems="@FilteredReportData.Count()"
+                                        PageChanged="@OnPageChanged"
+                                        PageSizeChanged="@OnPageSizeChanged" />
+                        }
+                    </div>
+                }
+
+                <!-- Mobile Card View -->
+                <div class="report-cards-container">
+                    @if (reportData.Any())
+                    {
+                        @foreach (var row in PaginatedReportData)
+                        {
+                            <div class="report-card-item">
+                                <div class="report-card-header">
+                                    <h3 class="report-card-title">@row.PurchaseOrderNumber</h3>
+                                    <span class="status-badge status-@row.Status.ToLower()">@row.Status</span>
+                                </div>
+                                <div class="report-card-body">
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Order Date</span>
+                                        <span class="report-info-value">@row.OrderDate.ToString("MM/dd/yyyy")</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Expected Delivery</span>
+                                        <span class="report-info-value">@(row.ExpectedDeliveryDate.HasValue ? row.ExpectedDeliveryDate.Value.ToString("MM/dd/yyyy") : "N/A")</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Supplier</span>
+                                        <span class="report-info-value">@row.SupplierName</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Item Count</span>
+                                        <span class="report-info-value">@row.ItemCount</span>
+                                    </div>
+                                    <div class="report-info-group">
+                                        <span class="report-info-label">Total Amount</span>
+                                        <span class="report-info-value total-amount">₱@row.TotalAmount.ToString("N2")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (isLoaded)
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-file-alt empty-state-icon"></i>
+                            <p class="empty-state-text">No purchase orders found for the selected filters.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-info-circle empty-state-icon"></i>
+                            <p class="empty-state-text">Select filters and click "Generate Report" to view data.</p>
+                        </div>
+                    }
+                </div>
+
+                @if (reportData.Any() && FilteredReportData.Any())
+                {
+                    <div class="report-summary-footer">
+                        <div class="summary-totals">
+                            <div class="summary-total-item">
+                                <span class="summary-total-label">Total Orders:</span>
+                                <span class="summary-total-value">@FilteredReportData.Count()</span>
+                            </div>
+                            <div class="summary-total-item">
+                                <span class="summary-total-label">Total Items:</span>
+                                <span class="summary-total-value">@FilteredReportData.Sum(r => r.ItemCount)</span>
+                            </div>
+                            <div class="summary-total-item">
+                                <span class="summary-total-label">Total Amount:</span>
+                                <span class="summary-total-value grand-total">₱@FilteredReportData.Sum(r => r.TotalAmount).ToString("N2")</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    </div>
+    }
+}
+
+@code {
+    private DateTime? startDate = null;
+    private DateTime? endDate = null;
+    private string selectedPreset = "custom";
+    private int selectedSupplierId = 0;
+    private string selectedStatus = "";
+    private List<PurchaseOrderReportModel> reportData = new List<PurchaseOrderReportModel>();
+    private List<SupplierModel> availableSuppliers = new List<SupplierModel>();
+    private string errorMessage = "";
+    private bool isLoaded = false;
+    
+    // Search and Sort
+    private string searchTerm = "";
+    private string sortColumn = "OrderDate";
+    private string sortDirection = "desc";
+    
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        await LoadSuppliers();
+    }
+
+    private async Task LoadSuppliers()
+    {
+        try
+        {
+            availableSuppliers = (await SupplierService.GetSuppliersAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading suppliers: {ex.Message}";
+        }
+    }
+
+    private async Task LoadReport()
+    {
+        try
+        {
+            errorMessage = "";
+            isLoaded = false;
+            StateHasChanged();
+
+            if (startDate.HasValue && endDate.HasValue && startDate.Value > endDate.Value)
+            {
+                errorMessage = "Start date cannot be greater than end date.";
+                return;
+            }
+
+            int? supplierId = selectedSupplierId > 0 ? selectedSupplierId : null;
+            string? status = string.IsNullOrEmpty(selectedStatus) ? null : selectedStatus;
+
+            reportData = await ReportService.GetPurchaseOrderReportAsync(startDate, endDate, supplierId, status);
+            isLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading report: {ex.Message}";
+            Console.WriteLine($"Error loading purchase order report: {ex}");
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportToPdf()
+    {
+        if (!reportData.Any())
+            return;
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("pdfExport.exportTableToPdf", 
+                "report-table", 
+                "Purchase Order Report",
+                $"PurchaseOrderReport_{DateTime.Now:yyyyMMdd_HHmmss}.pdf");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error exporting PDF: {ex.Message}";
+            Console.WriteLine($"Error exporting PDF: {ex}");
+            StateHasChanged();
+        }
+    }
+
+    private void ClearError()
+    {
+        errorMessage = "";
+    }
+
+    private void OnStartDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            startDate = date;
+        }
+        selectedPreset = "custom";
+        StateHasChanged();
+    }
+
+    private void OnEndDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            endDate = date;
+        }
+        selectedPreset = "custom";
+        StateHasChanged();
+    }
+
+    private void SetDatePreset(string preset)
+    {
+        selectedPreset = preset;
+        var now = DateTime.Now;
+        
+        switch (preset)
+        {
+            case "today":
+                startDate = now.Date;
+                endDate = now.Date;
+                break;
+            case "last7":
+                startDate = now.AddDays(-7).Date;
+                endDate = now.Date;
+                break;
+            case "last30":
+                startDate = now.AddDays(-30).Date;
+                endDate = now.Date;
+                break;
+            case "thismonth":
+                startDate = new DateTime(now.Year, now.Month, 1);
+                endDate = now.Date;
+                break;
+            case "lastmonth":
+                var firstDayLastMonth = new DateTime(now.Year, now.Month, 1).AddMonths(-1);
+                var lastDayLastMonth = firstDayLastMonth.AddMonths(1).AddDays(-1);
+                startDate = firstDayLastMonth;
+                endDate = lastDayLastMonth;
+                break;
+            case "thisyear":
+                startDate = new DateTime(now.Year, 1, 1);
+                endDate = now.Date;
+                break;
+            case "custom":
+                // Keep current dates
+                break;
+        }
+        
+        StateHasChanged();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+        {
+            sortDirection = sortDirection == "asc" ? "desc" : "asc";
+        }
+        else
+        {
+            sortColumn = column;
+            sortDirection = "asc";
+        }
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private IEnumerable<PurchaseOrderReportModel> FilteredReportData
+    {
+        get
+        {
+            var filtered = reportData.AsEnumerable();
+
+            if (!string.IsNullOrEmpty(searchTerm))
+            {
+                filtered = filtered.Where(r => 
+                    r.PurchaseOrderNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    r.SupplierName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Sort
+            switch (sortColumn)
+            {
+                case "PurchaseOrderNumber":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.PurchaseOrderNumber) 
+                        : filtered.OrderByDescending(r => r.PurchaseOrderNumber);
+                    break;
+                case "OrderDate":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.OrderDate) 
+                        : filtered.OrderByDescending(r => r.OrderDate);
+                    break;
+                case "ExpectedDeliveryDate":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.ExpectedDeliveryDate ?? DateTime.MaxValue) 
+                        : filtered.OrderByDescending(r => r.ExpectedDeliveryDate ?? DateTime.MinValue);
+                    break;
+                case "SupplierName":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.SupplierName) 
+                        : filtered.OrderByDescending(r => r.SupplierName);
+                    break;
+                case "Status":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.Status) 
+                        : filtered.OrderByDescending(r => r.Status);
+                    break;
+                case "ItemCount":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.ItemCount) 
+                        : filtered.OrderByDescending(r => r.ItemCount);
+                    break;
+                case "TotalAmount":
+                    filtered = sortDirection == "asc" 
+                        ? filtered.OrderBy(r => r.TotalAmount) 
+                        : filtered.OrderByDescending(r => r.TotalAmount);
+                    break;
+            }
+
+            return filtered;
+        }
+    }
+
+    private IEnumerable<PurchaseOrderReportModel> PaginatedReportData
+    {
+        get
+        {
+            var filtered = FilteredReportData.ToList();
+            return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
+        }
+    }
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+    {
+        pageSize = newPageSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    // Check if user can access reports
+    // Only Inventory Manager and Administrator can access
+    private bool CanAccessReports()
+    {
+        if (AuthService == null)
+            return false;
+
+        string userRole = (AuthService.CurrentUserRoleName ?? "").Trim();
+        return userRole.Equals("Inventory Manager", StringComparison.OrdinalIgnoreCase) ||
+               userRole.Equals("Administrator", StringComparison.OrdinalIgnoreCase);
+    }
+}
+

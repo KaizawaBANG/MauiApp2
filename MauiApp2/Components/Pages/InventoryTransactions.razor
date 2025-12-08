@@ -1,0 +1,634 @@
+@page "/inventory-transactions"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Models
+@using Microsoft.JSInterop
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject IStockInService StockInService
+@inject IStockOutService StockOutService
+@inject IJSRuntime JSRuntime
+
+<link href="css/inventory-transactions.css" rel="stylesheet" />
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+    <div class="main-content">
+        <div class="content-header">
+            <h1>Inventory Transactions</h1>
+        </div>
+
+        <div class="inventory-section">
+            <div class="tab-section">
+                <div class="tabs">
+                    <button class="tab active">All Transactions</button>
+                </div>
+            </div>
+
+            <div class="product-table-container">
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                <div class="toolbar">
+                    <div class="filter-container" style="display: flex; gap: 15px; align-items: center;">
+                        <label style="font-weight: 500; color: #374151;">Filter by Type:</label>
+                        <select class="form-control" style="width: 200px;" value="@selectedTransactionType" @onchange="OnFilterChanged">
+                            <option value="all">All Transactions</option>
+                            <option value="stockin">Stock In</option>
+                            <option value="stockout">Stock Out</option>
+                        </select>
+                    </div>
+                    <div class="search-container">
+                        <input type="text"
+                               class="search-input"
+                               placeholder="Search by reference number, supplier, or reason..."
+                               value="@searchTerm"
+                               @oninput="OnSearchInput" />
+                        <span class="search-icon"><i class="fas fa-search"></i></span>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="product-table">
+                    <thead>
+                        <tr>
+                            <th>Transaction Type</th>
+                            <th>Reference Number</th>
+                            <th>Date</th>
+                            <th>Source/Reason</th>
+                            <th>Quantity</th>
+                            <th>Total Cost</th>
+                            <th>Processed By</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (PaginatedTransactions.Any())
+                        {
+                            @foreach (var transaction in PaginatedTransactions)
+                            {
+                                <tr>
+                                    <td>
+                                        <span class="status-badge @(transaction.TransactionType == "Stock In" ? "active" : "inactive")">
+                                            <i class="fas @(transaction.TransactionType == "Stock In" ? "fa-arrow-down" : "fa-arrow-up")"></i>
+                                            @transaction.TransactionType
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="invoice-number">@transaction.ReferenceNumber</span>
+                                    </td>
+                                    <td>@transaction.TransactionDate.ToString("MM/dd/yyyy HH:mm")</td>
+                                    <td>
+                                        @if (transaction.TransactionType == "Stock In")
+                                        {
+                                            <div>
+                                                <div><strong>PO:</strong> @(transaction.PONumber ?? "N/A")</div>
+                                                <div style="font-size: 0.875rem; color: #6b7280;">Supplier: @(transaction.SupplierName ?? "N/A")</div>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div>
+                                                <div><strong>Reason:</strong> @transaction.Reason</div>
+                                                @if (!string.IsNullOrEmpty(transaction.SalesOrderNumber))
+                                                {
+                                                    <div style="font-size: 0.875rem; color: #6b7280;">Invoice: @transaction.SalesOrderNumber</div>
+                                                }
+                                            </div>
+                                        }
+                                    </td>
+                                    <td>
+                                        <strong>@transaction.TotalQuantity</strong>
+                                        <span style="font-size: 0.875rem; color: #6b7280;"> items</span>
+                                    </td>
+                                    <td>
+                                        @if (transaction.TotalCost > 0)
+                                        {
+                                            <span style="font-weight: 600; color: @(transaction.TransactionType == "Stock In" ? "#059669" : "#dc2626");">
+                                                ₱@transaction.TotalCost.ToString("N2")
+                                            </span>
+                                            @if (transaction.TransactionType == "Stock Out")
+                                            {
+                                                <div style="font-size: 0.75rem; color: #6b7280;"></div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span style="color: #9ca3af;">-</span>
+                                        }
+                                    </td>
+                                    <td>@(transaction.ProcessedByName ?? "N/A")</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="view-btn" title="View Details" @onclick="() => ViewTransactionDetails(transaction)">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                        else
+                        {
+                            <tr>
+                                <td colspan="8" class="empty-state-cell">
+                                    <div class="empty-state">
+                                        <i class="fas fa-boxes empty-state-icon"></i>
+                                        @if (string.IsNullOrWhiteSpace(searchTerm))
+                                        {
+                                            <p class="empty-state-text">No inventory transactions found.</p>
+                                        }
+                                        else
+                                        {
+                                            <p class="empty-state-text">No transactions match your search criteria.</p>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                    </table>
+                </div>
+
+                <!-- Mobile Card View -->
+                <div class="transaction-cards-container">
+                    @if (PaginatedTransactions.Any())
+                    {
+                        @foreach (var transaction in PaginatedTransactions)
+                        {
+                            <div class="transaction-card">
+                                <div class="transaction-card-header">
+                                    <div>
+                                        <h3 class="transaction-card-title">@transaction.ReferenceNumber</h3>
+                                        <span class="transaction-card-type">
+                                            <span class="status-badge @(transaction.TransactionType == "Stock In" ? "status-active" : "status-inactive")">
+                                                <i class="fas @(transaction.TransactionType == "Stock In" ? "fa-arrow-down" : "fa-arrow-up")"></i>
+                                                @transaction.TransactionType
+                                            </span>
+                                        </span>
+                                    </div>
+                                    <button class="view-btn" title="View Details" @onclick="() => ViewTransactionDetails(transaction)">
+                                        <i class="fas fa-eye"></i>
+                                        <span>View</span>
+                                    </button>
+                                </div>
+                                <div class="transaction-card-body">
+                                    <div class="transaction-info-group">
+                                        <span class="transaction-info-label">Date</span>
+                                        <span class="transaction-info-value">@transaction.TransactionDate.ToString("MM/dd/yyyy HH:mm")</span>
+                                    </div>
+                                    @if (transaction.TransactionType == "Stock In")
+                                    {
+                                        <div class="transaction-info-group">
+                                            <span class="transaction-info-label">PO Number</span>
+                                            <span class="transaction-info-value">@(transaction.PONumber ?? "N/A")</span>
+                                        </div>
+                                        <div class="transaction-info-group">
+                                            <span class="transaction-info-label">Supplier</span>
+                                            <span class="transaction-info-value">@(transaction.SupplierName ?? "N/A")</span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="transaction-info-group">
+                                            <span class="transaction-info-label">Reason</span>
+                                            <span class="transaction-info-value">@transaction.Reason</span>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(transaction.SalesOrderNumber))
+                                        {
+                                            <div class="transaction-info-group">
+                                                <span class="transaction-info-label">Invoice</span>
+                                                <span class="transaction-info-value">@transaction.SalesOrderNumber</span>
+                                            </div>
+                                        }
+                                    }
+                                    <div class="transaction-info-group">
+                                        <span class="transaction-info-label">Quantity</span>
+                                        <span class="transaction-info-value">@transaction.TotalQuantity items</span>
+                                    </div>
+                                    <div class="transaction-info-group">
+                                        <span class="transaction-info-label">Total Cost</span>
+                                        <span class="transaction-info-value" style="color: @(transaction.TransactionType == "Stock In" ? "#059669" : "#dc2626");">
+                                            ₱@transaction.TotalCost.ToString("N2")
+                                        </span>
+                                    </div>
+                                    <div class="transaction-info-group">
+                                        <span class="transaction-info-label">Processed By</span>
+                                        <span class="transaction-info-value">@(transaction.ProcessedByName ?? "N/A")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-boxes empty-state-icon"></i>
+                            @if (string.IsNullOrWhiteSpace(searchTerm))
+                            {
+                                <p class="empty-state-text">No inventory transactions found.</p>
+                            }
+                            else
+                            {
+                                <p class="empty-state-text">No transactions match your search criteria.</p>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Pagination -->
+                @if (FilteredTransactions.Any())
+                {
+                    <Pagination CurrentPage="@currentPage"
+                                PageSize="@pageSize"
+                                TotalItems="@FilteredTransactions.Count()"
+                                PageChanged="@OnPageChanged"
+                                PageSizeChanged="@OnPageSizeChanged" />
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Transaction Details Modal -->
+@if (showViewDetailsModal && viewingTransaction != null)
+{
+    <div class="modal-overlay">
+        <div class="modal-content large-modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Transaction Details - @viewingTransaction.ReferenceNumber</h3>
+                <button class="modal-close" @onclick="CloseViewDetailsModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                @if (isLoadingDetails)
+                {
+                    <div class="loading-indicator">
+                        <div class="spinner"></div>
+                        <span>Loading details...</span>
+                    </div>
+                }
+                else
+                {
+                    <!-- Transaction Information Section -->
+                    <div class="po-details-section">
+                        <div class="po-details-grid">
+                            <div class="po-detail-item">
+                                <label>Transaction Type:</label>
+                                <span class="status-badge @(viewingTransaction.TransactionType == "Stock In" ? "active" : "inactive")">
+                                    @viewingTransaction.TransactionType
+                                </span>
+                            </div>
+                            <div class="po-detail-item">
+                                <label>Reference Number:</label>
+                                <span>@viewingTransaction.ReferenceNumber</span>
+                            </div>
+                            <div class="po-detail-item">
+                                <label>Date:</label>
+                                <span>@viewingTransaction.TransactionDate.ToString("MM/dd/yyyy HH:mm")</span>
+                            </div>
+                            @if (viewingTransaction.TransactionType == "Stock In")
+                            {
+                                <div class="po-detail-item">
+                                    <label>Purchase Order:</label>
+                                    <span>@(viewingTransaction.PONumber ?? "N/A")</span>
+                                </div>
+                                <div class="po-detail-item">
+                                    <label>Supplier:</label>
+                                    <span>@(viewingTransaction.SupplierName ?? "N/A")</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="po-detail-item">
+                                    <label>Reason:</label>
+                                    <span>@viewingTransaction.Reason</span>
+                                </div>
+                                @if (!string.IsNullOrEmpty(viewingTransaction.SalesOrderNumber))
+                                {
+                                    <div class="po-detail-item">
+                                        <label>Sales Invoice:</label>
+                                        <span>@viewingTransaction.SalesOrderNumber</span>
+                                    </div>
+                                }
+                            }
+                            <div class="po-detail-item">
+                                <label>Processed By:</label>
+                                <span>@(viewingTransaction.ProcessedByName ?? "N/A")</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items Section -->
+                    <div class="po-items-section">
+                        <h4>Transaction Items</h4>
+                        @if (viewingItems.Any())
+                        {
+                            <table class="po-items-table">
+                                <thead>
+                                    <tr>
+                                        <th>Product Name</th>
+                                        <th>SKU</th>
+                                        <th>Quantity</th>
+                                        @if (viewingTransaction.TransactionType == "Stock In")
+                                        {
+                                            <th>Unit Cost</th>
+                                            <th>Total Cost</th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in viewingItems)
+                                    {
+                                        <tr>
+                                            <td>@(item.ProductName ?? "N/A")</td>
+                                            <td>@(item.ProductSKU ?? "N/A")</td>
+                                            <td>@item.Quantity</td>
+                                            @if (viewingTransaction.TransactionType == "Stock In")
+                                            {
+                                                <td>₱@(item.UnitCost?.ToString("N2") ?? "0.00")</td>
+                                                <td>₱@((item.Quantity * (item.UnitCost ?? 0)).ToString("N2"))</td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        else
+                        {
+                            <div class="no-items">
+                                <p>No items found for this transaction.</p>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn-submit" @onclick="CloseViewDetailsModal">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string searchTerm = "";
+    private string selectedTransactionType = "all";
+    private List<InventoryTransaction> allTransactions = new List<InventoryTransaction>();
+    private bool isLoading = false;
+    private string errorMessage = "";
+    
+    // View Details
+    private bool showViewDetailsModal = false;
+    private InventoryTransaction? viewingTransaction = null;
+    private List<TransactionItem> viewingItems = new List<TransactionItem>();
+    private bool isLoadingDetails = false;
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+
+    // Display model for unified transactions
+    private class InventoryTransaction
+    {
+        public string TransactionType { get; set; } = ""; // "Stock In" or "Stock Out"
+        public string ReferenceNumber { get; set; } = "";
+        public DateTime TransactionDate { get; set; }
+        public string? PONumber { get; set; }
+        public string? SupplierName { get; set; }
+        public string? SalesOrderNumber { get; set; }
+        public string Reason { get; set; } = "";
+        public string? ProcessedByName { get; set; }
+        public int TransactionId { get; set; } // stock_in_id or stock_out_id
+        public int TotalQuantity { get; set; } = 0;
+        public decimal TotalCost { get; set; } = 0;
+    }
+
+    private class TransactionItem
+    {
+        public string? ProductName { get; set; }
+        public string? ProductSKU { get; set; }
+        public int Quantity { get; set; }
+        public decimal? UnitCost { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        await LoadTransactions();
+    }
+
+    private async Task LoadTransactions()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = "";
+            StateHasChanged();
+
+            allTransactions = new List<InventoryTransaction>();
+
+            // Load Stock In transactions
+            var stockIns = await StockInService.GetStockInHistoryAsync();
+            foreach (var stockIn in stockIns)
+            {
+                // Calculate totals from items
+                var items = await StockInService.GetStockInItemsAsync(stockIn.stock_in_id);
+                int totalQuantity = items.Sum(i => i.quantity_received);
+                decimal totalCost = items.Sum(i => i.quantity_received * i.unit_cost);
+
+                allTransactions.Add(new InventoryTransaction
+                {
+                    TransactionType = "Stock In",
+                    ReferenceNumber = stockIn.stock_in_number,
+                    TransactionDate = stockIn.stock_in_date,
+                    PONumber = stockIn.po_number,
+                    SupplierName = stockIn.supplier_name,
+                    ProcessedByName = stockIn.processed_by_name,
+                    TransactionId = stockIn.stock_in_id,
+                    TotalQuantity = totalQuantity,
+                    TotalCost = totalCost
+                });
+            }
+
+            // Load Stock Out transactions
+            var stockOuts = await StockOutService.GetStockOutHistoryAsync();
+            foreach (var stockOut in stockOuts)
+            {
+                // Calculate totals from items
+                var items = await StockOutService.GetStockOutItemsAsync(stockOut.stock_out_id);
+                int totalQuantity = items.Sum(i => i.quantity);
+                // Calculate total cost using product's cost_price (COGS - Cost of Goods Sold)
+                decimal totalCost = items.Sum(i => i.quantity * (i.cost_price ?? 0));
+
+                allTransactions.Add(new InventoryTransaction
+                {
+                    TransactionType = "Stock Out",
+                    ReferenceNumber = stockOut.stock_out_number,
+                    TransactionDate = stockOut.stock_out_date,
+                    SalesOrderNumber = stockOut.sales_order_number,
+                    Reason = stockOut.reason,
+                    ProcessedByName = stockOut.processed_by_name,
+                    TransactionId = stockOut.stock_out_id,
+                    TotalQuantity = totalQuantity,
+                    TotalCost = totalCost // COGS (Cost of Goods Sold)
+                });
+            }
+
+            // Sort by transaction ID ascending, then by date descending
+            allTransactions = allTransactions.OrderBy(t => t.TransactionId).ThenByDescending(t => t.TransactionDate).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading transactions: {ex.Message}";
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private IEnumerable<InventoryTransaction> FilteredTransactions
+    {
+        get
+        {
+            var filtered = allTransactions.AsEnumerable();
+
+            // Filter by transaction type
+            if (selectedTransactionType == "stockin")
+            {
+                filtered = filtered.Where(t => t.TransactionType == "Stock In");
+            }
+            else if (selectedTransactionType == "stockout")
+            {
+                filtered = filtered.Where(t => t.TransactionType == "Stock Out");
+            }
+
+            // Filter by search term
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                filtered = filtered.Where(t =>
+                    t.ReferenceNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    (t.SupplierName != null && t.SupplierName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)) ||
+                    (t.PONumber != null && t.PONumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)) ||
+                    (t.SalesOrderNumber != null && t.SalesOrderNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)) ||
+                    t.Reason.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Maintain sort order by transaction ID ascending
+            return filtered.OrderBy(t => t.TransactionId).ThenByDescending(t => t.TransactionDate);
+        }
+    }
+
+    private IEnumerable<InventoryTransaction> PaginatedTransactions
+    {
+        get
+        {
+            var filtered = FilteredTransactions.ToList();
+            return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
+        }
+    }
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+    {
+        pageSize = newPageSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void OnFilterChanged(ChangeEventArgs e)
+    {
+        selectedTransactionType = e.Value?.ToString() ?? "all";
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private async Task ViewTransactionDetails(InventoryTransaction transaction)
+    {
+        try
+        {
+            showViewDetailsModal = true;
+            viewingTransaction = transaction;
+            isLoadingDetails = true;
+            viewingItems = new List<TransactionItem>();
+            StateHasChanged();
+
+            if (transaction.TransactionType == "Stock In")
+            {
+                var stockIn = await StockInService.GetStockInByIdAsync(transaction.TransactionId);
+                var items = await StockInService.GetStockInItemsAsync(transaction.TransactionId);
+                
+                viewingItems = items.Select(item => new TransactionItem
+                {
+                    ProductName = item.product_name,
+                    ProductSKU = item.product_sku,
+                    Quantity = item.quantity_received,
+                    UnitCost = item.unit_cost
+                }).ToList();
+            }
+            else
+            {
+                var stockOut = await StockOutService.GetStockOutByIdAsync(transaction.TransactionId);
+                var items = await StockOutService.GetStockOutItemsAsync(transaction.TransactionId);
+                
+                viewingItems = items.Select(item => new TransactionItem
+                {
+                    ProductName = item.product_name,
+                    ProductSKU = item.product_sku,
+                    Quantity = item.quantity,
+                    UnitCost = null // Stock out doesn't have unit cost
+                }).ToList();
+            }
+
+            isLoadingDetails = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            isLoadingDetails = false;
+            errorMessage = $"Error loading transaction details: {ex.Message}";
+            CloseViewDetailsModal();
+        }
+    }
+
+    private void CloseViewDetailsModal()
+    {
+        showViewDetailsModal = false;
+        viewingTransaction = null;
+        viewingItems = new List<TransactionItem>();
+        StateHasChanged();
+    }
+
+    private void ClearError()
+    {
+        errorMessage = "";
+        StateHasChanged();
+    }
+}
+

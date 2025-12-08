@@ -1,0 +1,1169 @@
+﻿@page "/reports"
+
+@layout MainLayout
+
+@using MauiApp2.Services
+@using Microsoft.JSInterop
+
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<link href="css/Reports.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+
+    <Sidebar />
+
+    <main class="main-content">
+
+        <!-- Header with Reports title -->
+
+        <header class="header">
+
+            <h1 class="page-title">Reports</h1>
+
+        </header>
+
+        @if (isLoading)
+
+        {
+
+            <div class="loading-overlay">
+
+                <div class="loading-spinner">
+
+                    <i class="fas fa-spinner fa-spin"></i>
+
+                    <p>Loading reports data...</p>
+
+                </div>
+
+            </div>
+
+        }
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-error" style="margin: 20px; padding: 15px; background-color: #fee2e2; border: 1px solid #fecaca; border-radius: 8px; color: #991b1b;">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>@errorMessage</span>
+                <button style="float: right; background: none; border: none; color: #991b1b; cursor: pointer; font-size: 18px;" @onclick="ClearErrorMessage">×</button>
+            </div>
+        }
+
+        <div class="reports-section">
+
+            <!-- Summary Cards -->
+            <div class="summary-cards">
+                <div class="summary-card">
+                    <div class="summary-icon sales-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="summary-content">
+                        <div class="summary-label">Total Sales</div>
+                        <div class="summary-value">₱@(salesReportData != null && salesReportData.Any() ? salesReportData.Sum(s => s.TotalAmount).ToString("N2") : "0.00")</div>
+                        <div class="summary-count">@(salesReportData?.Count ?? 0) transactions</div>
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-icon purchase-icon">
+                        <i class="fas fa-file-invoice-dollar"></i>
+                    </div>
+                    <div class="summary-content">
+                        <div class="summary-label">Purchase Orders</div>
+                        <div class="summary-value">₱@(purchaseOrderReportData != null && purchaseOrderReportData.Any() ? purchaseOrderReportData.Sum(po => po.TotalAmount).ToString("N2") : "0.00")</div>
+                        <div class="summary-count">@(purchaseOrderReportData?.Count ?? 0) orders</div>
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-icon inventory-icon">
+                        <i class="fas fa-warehouse"></i>
+                    </div>
+                    <div class="summary-content">
+                        <div class="summary-label">Inventory Value</div>
+                        <div class="summary-value">₱@(inventoryReportData != null && inventoryReportData.Any() ? inventoryReportData.Sum(i => i.TotalValue).ToString("N2") : "0.00")</div>
+                        <div class="summary-count">@(inventoryReportData?.Count ?? 0) items</div>
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-icon movement-icon">
+                        <i class="fas fa-exchange-alt"></i>
+                    </div>
+                    <div class="summary-content">
+                        <div class="summary-label">Stock Movements</div>
+                        <div class="summary-value">@(stockMovementReportData?.Count ?? 0)</div>
+                        <div class="summary-count">@(stockMovementReportData?.Where(m => m.Quantity > 0).Count() ?? 0) in, @(stockMovementReportData?.Where(m => m.Quantity < 0).Count() ?? 0) out</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabs Navigation -->
+
+            <div class="tabs-container">
+
+                <button class="tab-item @(activeTab == "sales" ? "active" : "")" @onclick="@(() => SetActiveTab("sales"))">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Sales Report</span>
+                </button>
+
+                <button class="tab-item @(activeTab == "purchase" ? "active" : "")" @onclick="@(() => SetActiveTab("purchase"))">
+                    <i class="fas fa-file-invoice-dollar"></i>
+                    <span>Purchase Order Report</span>
+                </button>
+
+                <button class="tab-item @(activeTab == "inventory" ? "active" : "")" @onclick="@(() => SetActiveTab("inventory"))">
+                    <i class="fas fa-warehouse"></i>
+                    <span>Inventory Report</span>
+                </button>
+
+                <button class="tab-item @(activeTab == "stock" ? "active" : "")" @onclick="@(() => SetActiveTab("stock"))">
+                    <i class="fas fa-exchange-alt"></i>
+                    <span>Stock Movement Report</span>
+                </button>
+
+            </div>
+
+            <!-- Action Bar with Date Filters -->
+
+            <div class="action-bar">
+
+                <div class="action-bar-left">
+
+                    <div class="date-filter-group">
+
+                        <div class="date-input-wrapper">
+
+                            <label class="date-label">Start Date</label>
+
+                            <input type="date"
+                                   class="date-input"
+                                   value="@(startDate?.ToString("yyyy-MM-dd") ?? "")"
+                                   @onchange="OnStartDateChanged" />
+
+                        </div>
+
+                        <div class="date-input-wrapper">
+
+                            <label class="date-label">End Date</label>
+
+                            <input type="date"
+                                   class="date-input"
+                                   value="@(endDate?.ToString("yyyy-MM-dd") ?? "")"
+                                   @onchange="OnEndDateChanged" />
+
+                        </div>
+
+                        <button class="btn-filter" @onclick="ApplyDateFilter">
+
+                            <i class="fas fa-filter"></i> Apply Filter
+
+                        </button>
+
+                        <button class="btn-reset" @onclick="ResetDateFilter">
+
+                            <i class="fas fa-redo"></i> Reset
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+                <div class="action-bar-right">
+
+                    <div class="export-buttons">
+
+                        @if (activeTab == "sales")
+
+                        {
+
+                            <button class="btn-export-small" @onclick="ExportSalesReport">
+
+                                <i class="fas fa-file-pdf"></i> Export PDF
+
+                            </button>
+
+                            <button class="btn-export-small" @onclick="ExportSalesExcel">
+
+                                <i class="fas fa-file-excel"></i> Export Excel
+
+                            </button>
+
+                        }
+
+                        else if (activeTab == "purchase")
+
+                        {
+
+                            <button class="btn-export-small" @onclick="ExportPurchaseReport">
+
+                                <i class="fas fa-file-pdf"></i> Export PDF
+
+                            </button>
+
+                            <button class="btn-export-small" @onclick="ExportPurchaseExcel">
+
+                                <i class="fas fa-file-excel"></i> Export Excel
+
+                            </button>
+
+                        }
+
+                        else if (activeTab == "inventory")
+
+                        {
+
+                            <button class="btn-export-small" @onclick="ExportInventoryReport">
+
+                                <i class="fas fa-file-pdf"></i> Export PDF
+
+                            </button>
+
+                            <button class="btn-export-small" @onclick="ExportInventoryExcel">
+
+                                <i class="fas fa-file-excel"></i> Export Excel
+
+                            </button>
+
+                        }
+
+                        else if (activeTab == "stock")
+
+                        {
+
+                            <button class="btn-export-small" @onclick="ExportStockMovementReport">
+
+                                <i class="fas fa-file-pdf"></i> Export PDF
+
+                            </button>
+
+                            <button class="btn-export-small" @onclick="ExportStockMovementExcel">
+
+                                <i class="fas fa-file-excel"></i> Export Excel
+
+                            </button>
+
+                        }
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- Report Content Container -->
+
+            <div class="report-card">
+
+                <div class="report-content">
+
+                    <!-- Sales Report Tab -->
+                    @if (activeTab == "sales")
+
+                    {
+
+                        <div class="table-container">
+
+                            <table id="report-table" class="data-table">
+
+                                <thead>
+
+                                    <tr>
+
+                                        <th>Transaction #</th>
+
+                                        <th>Date</th>
+
+                                        <th>Customer</th>
+
+                                        <th>Product</th>
+
+                                        <th>Quantity</th>
+
+                                        <th>Unit Price</th>
+
+                                        <th>Total Amount</th>
+
+                                        <th>Status</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    @if (salesReportData != null && salesReportData.Any())
+
+                                    {
+
+                                        @foreach (var sale in salesReportData)
+
+                                        {
+
+                                            <tr>
+
+                                                <td><span class="text-muted font-monospace">@sale.TransactionNumber</span></td>
+
+                                                <td><span class="text-muted">@sale.Date.ToString("MMM dd, yyyy")</span></td>
+
+                                                <td>@sale.Customer</td>
+
+                                                <td>@sale.Product</td>
+
+                                                <td>@sale.Quantity</td>
+
+                                                <td>₱@sale.UnitPrice.ToString("N2")</td>
+
+                                                <td><strong>₱@sale.TotalAmount.ToString("N2")</strong></td>
+
+                                                <td><span class="badge badge-@sale.StatusClass">@sale.Status</span></td>
+
+                                            </tr>
+
+                                        }
+
+                                    }
+
+                                    else
+
+                                    {
+
+                                        <tr>
+
+                                            <td colspan="8" class="no-data">
+
+                                                <div class="no-data-content">
+
+                                                    <i class="fas fa-inbox"></i>
+
+                                                    <p>No sales data found for the selected date range</p>
+
+                                                    <span class="no-data-hint">Try adjusting your date filters</span>
+
+                                                </div>
+
+                                            </td>
+
+                                        </tr>
+
+                                    }
+
+                                </tbody>
+
+                                <tfoot>
+
+                                    <tr class="report-total">
+
+                                        <td colspan="6"><strong>Total Sales</strong></td>
+
+                                        <td colspan="2"><strong>₱@(salesReportData != null && salesReportData.Any() ? salesReportData.Sum(s => s.TotalAmount).ToString("N2") : "0.00")</strong></td>
+
+                                    </tr>
+
+                                </tfoot>
+
+                            </table>
+
+                        </div>
+
+                    }
+
+                    <!-- Purchase Order Report Tab -->
+                    @if (activeTab == "purchase")
+
+                    {
+
+                        <div class="table-container">
+
+                            <table id="report-table" class="data-table">
+
+                                <thead>
+
+                                    <tr>
+
+                                        <th>PO Number</th>
+
+                                        <th>Date</th>
+
+                                        <th>Supplier</th>
+
+                                        <th>Items</th>
+
+                                        <th>Total Amount</th>
+
+                                        <th>Status</th>
+
+                                        <th>Expected Delivery</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    @if (purchaseOrderReportData != null && purchaseOrderReportData.Any())
+
+                                    {
+
+                                        @foreach (var po in purchaseOrderReportData)
+
+                                        {
+
+                                            <tr>
+
+                                                <td><span class="text-muted font-monospace">@po.PONumber</span></td>
+
+                                                <td><span class="text-muted">@po.Date.ToString("MMM dd, yyyy")</span></td>
+
+                                                <td>@po.Supplier</td>
+
+                                                <td>@po.Items</td>
+
+                                                <td><strong>₱@po.TotalAmount.ToString("N2")</strong></td>
+
+                                                <td><span class="badge badge-@po.StatusClass">@po.Status</span></td>
+
+                                                <td><span class="text-muted">@po.ExpectedDelivery.ToString("MMM dd, yyyy")</span></td>
+
+                                            </tr>
+
+                                        }
+
+                                    }
+
+                                    else
+
+                                    {
+
+                                        <tr>
+
+                                            <td colspan="7" class="no-data">
+
+                                                <div class="no-data-content">
+
+                                                    <i class="fas fa-inbox"></i>
+
+                                                    <p>No purchase order data found for the selected date range</p>
+
+                                                    <span class="no-data-hint">Try adjusting your date filters</span>
+
+                                                </div>
+
+                                            </td>
+
+                                        </tr>
+
+                                    }
+
+                                </tbody>
+
+                                <tfoot>
+
+                                    <tr class="report-total">
+
+                                        <td colspan="4"><strong>Total Purchase Orders</strong></td>
+
+                                        <td colspan="3"><strong>₱@(purchaseOrderReportData != null && purchaseOrderReportData.Any() ? purchaseOrderReportData.Sum(po => po.TotalAmount).ToString("N2") : "0.00")</strong></td>
+
+                                    </tr>
+
+                                </tfoot>
+
+                            </table>
+
+                        </div>
+
+                    }
+
+                    <!-- Inventory Report Tab -->
+                    @if (activeTab == "inventory")
+
+                    {
+
+                        <div class="table-container">
+
+                            <table id="report-table" class="data-table">
+
+                                <thead>
+
+                                    <tr>
+
+                                        <th>Product Name</th>
+
+                                        <th>Category</th>
+
+                                        <th>Current Stock</th>
+
+                                        <th>Unit Price</th>
+
+                                        <th>Total Value</th>
+
+                                        <th>Reorder Level</th>
+
+                                        <th>Status</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    @if (inventoryReportData != null && inventoryReportData.Any())
+
+                                    {
+
+                                        @foreach (var item in inventoryReportData)
+
+                                        {
+
+                                            <tr>
+
+                                                <td>@item.ProductName</td>
+
+                                                <td>@item.Category</td>
+
+                                                <td>@item.CurrentStock</td>
+
+                                                <td>₱@item.UnitPrice.ToString("N2")</td>
+
+                                                <td><strong>₱@item.TotalValue.ToString("N2")</strong></td>
+
+                                                <td>@item.ReorderLevel</td>
+
+                                                <td><span class="badge badge-@item.StatusClass">@item.Status</span></td>
+
+                                            </tr>
+
+                                        }
+
+                                    }
+
+                                    else
+
+                                    {
+
+                                        <tr>
+
+                                            <td colspan="7" class="no-data">
+
+                                                <div class="no-data-content">
+
+                                                    <i class="fas fa-inbox"></i>
+
+                                                    <p>No inventory data found</p>
+
+                                                    <span class="no-data-hint">Inventory data will appear here</span>
+
+                                                </div>
+
+                                            </td>
+
+                                        </tr>
+
+                                    }
+
+                                </tbody>
+
+                                <tfoot>
+
+                                    <tr class="report-total">
+
+                                        <td colspan="4"><strong>Total Inventory Value</strong></td>
+
+                                        <td colspan="3"><strong>₱@(inventoryReportData != null && inventoryReportData.Any() ? inventoryReportData.Sum(i => i.TotalValue).ToString("N2") : "0.00")</strong></td>
+
+                                    </tr>
+
+                                </tfoot>
+
+                            </table>
+
+                        </div>
+
+                    }
+
+                    <!-- Stock Movement Report Tab -->
+                    @if (activeTab == "stock")
+
+                    {
+
+                        <div class="table-container">
+
+                            <table id="report-table" class="data-table">
+
+                                <thead>
+
+                                    <tr>
+
+                                        <th>Date</th>
+
+                                        <th>Product</th>
+
+                                        <th>Type</th>
+
+                                        <th>Reference</th>
+
+                                        <th>Quantity</th>
+
+                                        <th>Balance</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    @if (stockMovementReportData != null && stockMovementReportData.Any())
+
+                                    {
+
+                                        @foreach (var movement in stockMovementReportData)
+
+                                        {
+
+                                            <tr>
+
+                                                <td><span class="text-muted">@movement.Date.ToString("MMM dd, yyyy")</span></td>
+
+                                                <td>@movement.Product</td>
+
+                                                <td><span class="badge badge-@movement.TypeClass">@movement.Type</span></td>
+
+                                                <td><span class="text-muted font-monospace">@movement.Reference</span></td>
+
+                                                <td class="@(movement.Quantity >= 0 ? "positive" : "negative")">@(movement.Quantity >= 0 ? "+" : "")@movement.Quantity</td>
+
+                                                <td>@movement.Balance</td>
+
+                                            </tr>
+
+                                        }
+
+                                    }
+
+                                    else
+
+                                    {
+
+                                        <tr>
+
+                                            <td colspan="6" class="no-data">
+
+                                                <div class="no-data-content">
+
+                                                    <i class="fas fa-inbox"></i>
+
+                                                    <p>No stock movement data found for the selected date range</p>
+
+                                                    <span class="no-data-hint">Try adjusting your date filters</span>
+
+                                                </div>
+
+                                            </td>
+
+                                        </tr>
+
+                                    }
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+
+                    }
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+</div>
+
+@code {
+
+    private bool isLoading = true;
+
+    private string activeTab = "sales";
+    
+    private string errorMessage = "";
+
+    private void ClearErrorMessage()
+    {
+        errorMessage = "";
+        StateHasChanged();
+    }
+
+    // Date filtering
+
+    private DateTime? startDate = DateTime.Now.AddDays(-30);
+
+    private DateTime? endDate = DateTime.Now;
+
+    // Report data models
+
+    private List<SalesReportItem> salesReportData = new List<SalesReportItem>();
+
+    private List<PurchaseOrderReportItem> purchaseOrderReportData = new List<PurchaseOrderReportItem>();
+
+    private List<InventoryReportItem> inventoryReportData = new List<InventoryReportItem>();
+
+    private List<StockMovementReportItem> stockMovementReportData = new List<StockMovementReportItem>();
+
+    protected override async Task OnInitializedAsync()
+
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        // Check if user can access reports
+        if (!CanAccessReports())
+        {
+            Navigation.NavigateTo("/dashboard");
+            return;
+        }
+
+        await LoadReportsData();
+
+    }
+
+    // Check if user can access reports
+    // Only Inventory Manager and Administrator can access
+    private bool CanAccessReports()
+    {
+        if (AuthService == null)
+            return false;
+
+        string userRole = (AuthService.CurrentUserRoleName ?? "").Trim();
+        return userRole.Equals("Inventory Manager", StringComparison.OrdinalIgnoreCase) ||
+               userRole.Equals("Administrator", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task LoadReportsData()
+
+    {
+
+        isLoading = true;
+
+        try
+
+        {
+
+            // TODO: Load actual data from services/database
+
+            // For now, generate sample data
+
+            GenerateSampleData();
+
+            // Simulate async operation for future implementation
+
+            await Task.CompletedTask;
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            Console.WriteLine($"Error loading reports data: {ex.Message}");
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+    private void SetActiveTab(string tab)
+
+    {
+
+        activeTab = tab;
+
+        StateHasChanged();
+
+    }
+
+    private void GenerateSampleData()
+
+    {
+
+        // Generate sample sales report data
+
+        salesReportData = new List<SalesReportItem>
+
+        {
+
+            new SalesReportItem { Date = DateTime.Now.AddDays(-5), TransactionNumber = "TXN-2024-001", Customer = "John Doe", Product = "Glass Panel 10mm", Quantity = 2, UnitPrice = 5000M, TotalAmount = 10000M, Status = "Completed", StatusClass = "success" },
+
+            new SalesReportItem { Date = DateTime.Now.AddDays(-4), TransactionNumber = "TXN-2024-002", Customer = "Jane Smith", Product = "Aluminum Frame 2m", Quantity = 5, UnitPrice = 3000M, TotalAmount = 15000M, Status = "Completed", StatusClass = "success" },
+
+            new SalesReportItem { Date = DateTime.Now.AddDays(-3), TransactionNumber = "TXN-2024-003", Customer = "Mike Johnson", Product = "Tempered Glass 8mm", Quantity = 3, UnitPrice = 4500M, TotalAmount = 13500M, Status = "Pending", StatusClass = "warning" },
+
+            new SalesReportItem { Date = DateTime.Now.AddDays(-2), TransactionNumber = "TXN-2024-004", Customer = "Sarah Lee", Product = "Steel Support Beam", Quantity = 1, UnitPrice = 8000M, TotalAmount = 8000M, Status = "Completed", StatusClass = "success" },
+
+            new SalesReportItem { Date = DateTime.Now.AddDays(-1), TransactionNumber = "TXN-2024-005", Customer = "Robert Brown", Product = "Window Sealant", Quantity = 10, UnitPrice = 500M, TotalAmount = 5000M, Status = "Completed", StatusClass = "success" }
+
+        };
+
+        // Generate sample purchase order data
+
+        purchaseOrderReportData = new List<PurchaseOrderReportItem>
+
+        {
+
+            new PurchaseOrderReportItem { PONumber = "PO-2024-001", Date = DateTime.Now.AddDays(-10), Supplier = "ABC Suppliers", Items = "Glass Panel 10mm (20 units)", TotalAmount = 100000M, Status = "Completed", StatusClass = "success", ExpectedDelivery = DateTime.Now.AddDays(-5) },
+
+            new PurchaseOrderReportItem { PONumber = "PO-2024-002", Date = DateTime.Now.AddDays(-8), Supplier = "XYZ Materials", Items = "Aluminum Frame 2m (50 units)", TotalAmount = 150000M, Status = "Pending", StatusClass = "warning", ExpectedDelivery = DateTime.Now.AddDays(2) },
+
+            new PurchaseOrderReportItem { PONumber = "PO-2024-003", Date = DateTime.Now.AddDays(-5), Supplier = "Glass Co.", Items = "Tempered Glass 8mm (30 units)", TotalAmount = 135000M, Status = "In Transit", StatusClass = "info", ExpectedDelivery = DateTime.Now.AddDays(1) }
+
+        };
+
+        // Generate sample inventory data
+
+        inventoryReportData = new List<InventoryReportItem>
+
+        {
+
+            new InventoryReportItem { ProductName = "Glass Panel 10mm", Category = "Glass", CurrentStock = 150, UnitPrice = 5000M, TotalValue = 750000M, ReorderLevel = 50, Status = "In Stock", StatusClass = "success" },
+
+            new InventoryReportItem { ProductName = "Aluminum Frame 2m", Category = "Metal", CurrentStock = 200, UnitPrice = 3000M, TotalValue = 600000M, ReorderLevel = 100, Status = "In Stock", StatusClass = "success" },
+
+            new InventoryReportItem { ProductName = "Tempered Glass 8mm", Category = "Glass", CurrentStock = 25, UnitPrice = 4500M, TotalValue = 112500M, ReorderLevel = 50, Status = "Low Stock", StatusClass = "warning" },
+
+            new InventoryReportItem { ProductName = "Steel Support Beam", Category = "Metal", CurrentStock = 45, UnitPrice = 8000M, TotalValue = 360000M, ReorderLevel = 30, Status = "In Stock", StatusClass = "success" },
+
+            new InventoryReportItem { ProductName = "Window Sealant", Category = "Sealant", CurrentStock = 5, UnitPrice = 500M, TotalValue = 2500M, ReorderLevel = 20, Status = "Low Stock", StatusClass = "warning" }
+
+        };
+
+        // Generate sample stock movement data
+
+        stockMovementReportData = new List<StockMovementReportItem>
+
+        {
+
+            new StockMovementReportItem { Date = DateTime.Now.AddDays(-5), Product = "Glass Panel 10mm", Type = "Sale", TypeClass = "success", Reference = "TXN-2024-001", Quantity = -2, Balance = 150 },
+
+            new StockMovementReportItem { Date = DateTime.Now.AddDays(-4), Product = "Aluminum Frame 2m", Type = "Sale", TypeClass = "success", Reference = "TXN-2024-002", Quantity = -5, Balance = 200 },
+
+            new StockMovementReportItem { Date = DateTime.Now.AddDays(-3), Product = "Glass Panel 10mm", Type = "Purchase", TypeClass = "info", Reference = "PO-2024-001", Quantity = 20, Balance = 170 },
+
+            new StockMovementReportItem { Date = DateTime.Now.AddDays(-2), Product = "Tempered Glass 8mm", Type = "Sale", TypeClass = "success", Reference = "TXN-2024-003", Quantity = -3, Balance = 25 },
+
+            new StockMovementReportItem { Date = DateTime.Now.AddDays(-1), Product = "Window Sealant", Type = "Adjustment", TypeClass = "warning", Reference = "ADJ-2024-001", Quantity = -15, Balance = 5 }
+
+        };
+
+    }
+
+    private void OnStartDateChanged(ChangeEventArgs e)
+
+    {
+
+        if (DateTime.TryParse(e.Value?.ToString(), out DateTime parsedDate))
+
+        {
+
+            startDate = parsedDate;
+
+        }
+
+    }
+
+    private void OnEndDateChanged(ChangeEventArgs e)
+
+    {
+
+        if (DateTime.TryParse(e.Value?.ToString(), out DateTime parsedDate))
+
+        {
+
+            endDate = parsedDate;
+
+        }
+
+    }
+
+    private async Task ApplyDateFilter()
+
+    {
+
+        if (!startDate.HasValue || !endDate.HasValue)
+
+        {
+
+            return;
+
+        }
+
+        if (startDate.Value > endDate.Value)
+
+        {
+
+            return;
+
+        }
+
+        await LoadReportsData();
+
+    }
+
+    private async Task ResetDateFilter()
+
+    {
+
+        endDate = DateTime.Now;
+
+        startDate = DateTime.Now.AddDays(-30);
+
+        await LoadReportsData();
+
+    }
+
+    private async Task ExportSalesReport()
+    {
+        if (salesReportData == null || !salesReportData.Any())
+        {
+            errorMessage = "No data available to export.";
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            var title = $"Sales Report ({startDate?.ToString("MM/dd/yyyy") ?? "All"} - {endDate?.ToString("MM/dd/yyyy") ?? "All"})";
+            var filename = $"SalesReport_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+            await JSRuntime.InvokeVoidAsync("pdfExport.exportTableToPdf", "report-table", title, filename);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error exporting PDF: {ex.Message}";
+            Console.WriteLine($"Error exporting PDF: {ex}");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportSalesExcel()
+
+    {
+
+        // TODO: Implement Excel export
+
+        Console.WriteLine("Exporting sales report to Excel...");
+
+        await Task.CompletedTask;
+
+    }
+
+    private async Task ExportPurchaseReport()
+    {
+        if (purchaseOrderReportData == null || !purchaseOrderReportData.Any())
+        {
+            errorMessage = "No data available to export.";
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            var title = $"Purchase Order Report ({startDate?.ToString("MM/dd/yyyy") ?? "All"} - {endDate?.ToString("MM/dd/yyyy") ?? "All"})";
+            var filename = $"PurchaseOrderReport_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+            await JSRuntime.InvokeVoidAsync("pdfExport.exportTableToPdf", "report-table", title, filename);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error exporting PDF: {ex.Message}";
+            Console.WriteLine($"Error exporting PDF: {ex}");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportPurchaseExcel()
+
+    {
+
+        // TODO: Implement Excel export
+
+        Console.WriteLine("Exporting purchase order report to Excel...");
+
+        await Task.CompletedTask;
+
+    }
+
+    private async Task ExportInventoryReport()
+    {
+        if (inventoryReportData == null || !inventoryReportData.Any())
+        {
+            errorMessage = "No data available to export.";
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            var title = "Inventory Report";
+            var filename = $"InventoryReport_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+            await JSRuntime.InvokeVoidAsync("pdfExport.exportTableToPdf", "report-table", title, filename);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error exporting PDF: {ex.Message}";
+            Console.WriteLine($"Error exporting PDF: {ex}");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportInventoryExcel()
+
+    {
+
+        // TODO: Implement Excel export
+
+        Console.WriteLine("Exporting inventory report to Excel...");
+
+        await Task.CompletedTask;
+
+    }
+
+    private async Task ExportStockMovementReport()
+    {
+        if (stockMovementReportData == null || !stockMovementReportData.Any())
+        {
+            errorMessage = "No data available to export.";
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            var title = $"Stock Movement Report ({startDate?.ToString("MM/dd/yyyy") ?? "All"} - {endDate?.ToString("MM/dd/yyyy") ?? "All"})";
+            var filename = $"StockMovementReport_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+            await JSRuntime.InvokeVoidAsync("pdfExport.exportTableToPdf", "report-table", title, filename);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error exporting PDF: {ex.Message}";
+            Console.WriteLine($"Error exporting PDF: {ex}");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportStockMovementExcel()
+
+    {
+
+        // TODO: Implement Excel export
+
+        Console.WriteLine("Exporting stock movement report to Excel...");
+
+        await Task.CompletedTask;
+
+    }
+
+    // Data models
+
+    private class SalesReportItem
+
+    {
+
+        public DateTime Date { get; set; }
+
+        public string TransactionNumber { get; set; } = "";
+
+        public string Customer { get; set; } = "";
+
+        public string Product { get; set; } = "";
+
+        public int Quantity { get; set; }
+
+        public decimal UnitPrice { get; set; }
+
+        public decimal TotalAmount { get; set; }
+
+        public string Status { get; set; } = "";
+
+        public string StatusClass { get; set; } = "";
+
+    }
+
+    private class PurchaseOrderReportItem
+
+    {
+
+        public string PONumber { get; set; } = "";
+
+        public DateTime Date { get; set; }
+
+        public string Supplier { get; set; } = "";
+
+        public string Items { get; set; } = "";
+
+        public decimal TotalAmount { get; set; }
+
+        public string Status { get; set; } = "";
+
+        public string StatusClass { get; set; } = "";
+
+        public DateTime ExpectedDelivery { get; set; }
+
+    }
+
+    private class InventoryReportItem
+
+    {
+
+        public string ProductName { get; set; } = "";
+
+        public string Category { get; set; } = "";
+
+        public int CurrentStock { get; set; }
+
+        public decimal UnitPrice { get; set; }
+
+        public decimal TotalValue { get; set; }
+
+        public int ReorderLevel { get; set; }
+
+        public string Status { get; set; } = "";
+
+        public string StatusClass { get; set; } = "";
+
+    }
+
+    private class StockMovementReportItem
+
+    {
+
+        public DateTime Date { get; set; }
+
+        public string Product { get; set; } = "";
+
+        public string Type { get; set; } = "";
+
+        public string TypeClass { get; set; } = "";
+
+        public string Reference { get; set; } = "";
+
+        public int Quantity { get; set; }
+
+        public int Balance { get; set; }
+
+    }
+
+}

@@ -1,0 +1,119 @@
+@* Reusable Pagination Component *@
+@using Microsoft.AspNetCore.Components
+
+<div class="pagination-wrapper">
+    <div class="pagination-info">
+        Showing @((CurrentPage - 1) * PageSize + 1) to @Math.Min(CurrentPage * PageSize, TotalItems) of @TotalItems entries
+    </div>
+    <div class="pagination-controls">
+        <button class="pagination-btn" 
+                @onclick="() => GoToPage(1)" 
+                disabled="@(CurrentPage == 1 || TotalPages == 0)"
+                title="First page">
+            <i class="fas fa-angle-double-left"></i>
+            <span class="sr-only">First</span>
+        </button>
+        <button class="pagination-btn" 
+                @onclick="() => GoToPage(CurrentPage - 1)" 
+                disabled="@(CurrentPage == 1 || TotalPages == 0)"
+                title="Previous page">
+            <i class="fas fa-angle-left"></i>
+            <span class="sr-only">Previous</span>
+        </button>
+        
+        @for (int i = StartPage; i <= EndPage; i++)
+        {
+            var pageNum = i;
+            <button class="pagination-btn @(pageNum == CurrentPage ? "active" : "")"
+                    @onclick="() => GoToPage(pageNum)"
+                    disabled="@(TotalPages == 0)">
+                @pageNum
+            </button>
+        }
+        
+        <button class="pagination-btn" 
+                @onclick="() => GoToPage(CurrentPage + 1)" 
+                disabled="@(CurrentPage == TotalPages || TotalPages == 0)"
+                title="Next page">
+            <i class="fas fa-angle-right"></i>
+            <span class="sr-only">Next</span>
+        </button>
+        <button class="pagination-btn" 
+                @onclick="() => GoToPage(TotalPages)" 
+                disabled="@(CurrentPage == TotalPages || TotalPages == 0)"
+                title="Last page">
+            <i class="fas fa-angle-double-right"></i>
+            <span class="sr-only">Last</span>
+        </button>
+    </div>
+    <div class="pagination-size">
+        <label>Items per page:</label>
+        <select class="pagination-select" value="@PageSize" @onchange="OnPageSizeChange">
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+        </select>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int CurrentPage { get; set; } = 1;
+    [Parameter] public int PageSize { get; set; } = 10;
+    [Parameter] public int TotalItems { get; set; }
+    [Parameter] public EventCallback<int> PageChanged { get; set; }
+    [Parameter] public EventCallback<int> PageSizeChanged { get; set; }
+
+    private int TotalPages => (int)Math.Ceiling((double)TotalItems / PageSize);
+    
+    private int StartPage
+    {
+        get
+        {
+            var start = Math.Max(1, CurrentPage - 2);
+            var end = Math.Min(TotalPages, CurrentPage + 2);
+            
+            if (end - start < 4)
+            {
+                if (start == 1)
+                    end = Math.Min(5, TotalPages);
+                else if (end == TotalPages)
+                    start = Math.Max(1, TotalPages - 4);
+            }
+            
+            return start;
+        }
+    }
+    
+    private int EndPage
+    {
+        get
+        {
+            var start = StartPage;
+            return Math.Min(start + 4, TotalPages);
+        }
+    }
+
+    private async Task GoToPage(int page)
+    {
+        if (page >= 1 && page <= TotalPages && page != CurrentPage)
+        {
+            await PageChanged.InvokeAsync(page);
+        }
+    }
+
+    private async Task OnPageSizeChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int newSize))
+        {
+            PageSize = newSize;
+            await PageSizeChanged.InvokeAsync(PageSize);
+            // Reset to first page when page size changes
+            if (CurrentPage != 1)
+            {
+                await PageChanged.InvokeAsync(1);
+            }
+        }
+    }
+}
+

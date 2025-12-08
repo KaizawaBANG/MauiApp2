@@ -1,0 +1,578 @@
+@page "/chart-of-accounts"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Models
+@using System.Linq
+@inject IAuthService AuthService
+@inject IChartOfAccountService ChartOfAccountService
+@inject NavigationManager Navigation
+
+<link href="css/accounting.css" rel="stylesheet" />
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+    <div class="main-content">
+        <div class="content-header">
+            <h1>Chart of Accounts</h1>
+        </div>
+
+        <div class="inventory-section">
+            <div class="tab-section">
+                <div class="tabs">
+                    <button class="tab active">Account List</button>
+                </div>
+            </div>
+
+            <div class="product-table-container">
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                @if (isLoading)
+                {
+                    <div class="loading-indicator">
+                        <div class="spinner"></div>
+                        <span>Loading accounts...</span>
+                    </div>
+                }
+
+                <div class="toolbar">
+                    <button class="add-item-btn" @onclick="ShowAddModal">
+                        <i class="fas fa-plus"></i>
+                        <span>Add Account</span>
+                    </button>
+
+                    <div class="search-container">
+                        <input type="text"
+                               class="search-input"
+                               placeholder="Search by account code, name, or type..."
+                               value="@searchQuery"
+                               @oninput="OnSearchInput" />
+                        <span class="search-icon"><i class="fas fa-search"></i></span>
+                    </div>
+                </div>
+
+                @if (accounts != null && accounts.Any())
+                {
+                    <div class="table-wrapper">
+                        <table class="product-table">
+                            <thead>
+                                <tr>
+                                    <th>Account Code</th>
+                                    <th>Account Name</th>
+                                    <th>Type</th>
+                                    <th>Description</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var account in paginatedAccounts)
+                                {
+                                    <tr>
+                                        <td>@account.account_code</td>
+                                        <td>@account.account_name</td>
+                                        <td>
+                                            <span class="status-badge badge-@GetAccountTypeClass(account.account_type)">
+                                                @account.account_type
+                                            </span>
+                                        </td>
+                                        <td>@(account.description ?? "-")</td>
+                                        <td>
+                                            <span class="status-badge @(account.is_active ? "active" : "inactive")">
+                                                @(account.is_active ? "Active" : "Inactive")
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button class="btn-icon" @onclick="() => EditAccount(account)" title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (filteredAccounts.Any())
+                    {
+                        <Pagination CurrentPage="@currentPage"
+                                    PageSize="@pageSize"
+                                    TotalItems="@filteredAccounts.Count()"
+                                    PageChanged="@OnPageChanged"
+                                    PageSizeChanged="@OnPageSizeChanged" />
+                    }
+                }
+                else if (!isLoading)
+                {
+                    <div class="empty-state">
+                        <i class="fas fa-book empty-state-icon"></i>
+                        <p class="empty-state-text">No accounts found. Click "Add Account" to create one.</p>
+                    </div>
+                }
+
+                <!-- Mobile Card View -->
+                <div class="product-cards-container">
+                    @if (accounts != null && accounts.Any())
+                    {
+                        @foreach (var account in paginatedAccounts)
+                        {
+                            <div class="product-card">
+                                <div class="product-card-header">
+                                    <h3 class="product-card-title">@account.account_name</h3>
+                                    <span class="status-badge @(account.is_active ? "active" : "inactive")">
+                                        @(account.is_active ? "Active" : "Inactive")
+                                    </span>
+                                </div>
+                                <div class="product-card-body">
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Account Code</span>
+                                        <span class="product-info-value">@account.account_code</span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Type</span>
+                                        <span class="product-info-value">
+                                            <span class="status-badge badge-@GetAccountTypeClass(account.account_type)">
+                                                @account.account_type
+                                            </span>
+                                        </span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Description</span>
+                                        <span class="product-info-value">@(account.description ?? "-")</span>
+                                    </div>
+                                </div>
+                                <div class="product-card-footer">
+                                    <button class="btn-icon" @onclick="() => EditAccount(account)" title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                        <span>Edit</span>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (!isLoading)
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-book empty-state-icon"></i>
+                            <p class="empty-state-text">No accounts found. Click "Add Account" to create one.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+@if (showModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@(editingAccount != null ? "Edit Account" : "Add Account")</h3>
+                <button class="modal-close" @onclick="@(editingAccount != null ? ShowCancelEditModal : ShowCancelAddModal)"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-container">
+                    <div class="form-group">
+                        <label>Account Code *</label>
+                        <input type="text" class="form-control" @bind="newAccountCode" placeholder="e.g., 1001" maxlength="50" />
+                    </div>
+                    <div class="form-group">
+                        <label>Account Name *</label>
+                        <input type="text" class="form-control" @bind="newAccountName" placeholder="e.g., Cash" maxlength="100" />
+                    </div>
+                    <div class="form-group">
+                        <label>Account Type *</label>
+                        <select class="form-control" @bind="newAccountType">
+                            <option value="">Select Type</option>
+                            <option value="Asset">Asset</option>
+                            <option value="Liability">Liability</option>
+                            <option value="Equity">Equity</option>
+                            <option value="Revenue">Revenue</option>
+                            <option value="Expense">Expense</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea class="form-control" @bind="newDescription" rows="3" placeholder="Optional description" maxlength="500"></textarea>
+                        <small class="form-help">Optional description for this account</small>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="@(editingAccount != null ? ShowCancelEditModal : ShowCancelAddModal)">Cancel</button>
+                <button class="btn-submit" @onclick="ShowConfirmModal" disabled="@isSaving">
+                    @(isSaving ? "Saving..." : "Save")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Confirmation Modal -->
+@if (showConfirmModal)
+{
+    <div class="modal-overlay confirmation-modal-overlay">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header confirmation-modal-header">
+                <h3>@(editingAccount != null ? "Confirm Update Account" : "Confirm Add Account")</h3>
+                <button class="modal-close" @onclick="CloseConfirmModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body confirmation-modal-body">
+                <div class="confirmation-message-box">
+                    <p class="confirmation-question">Are you sure you want to @(editingAccount != null ? "update" : "add") this account?</p>
+                </div>
+                <div class="confirmation-details">
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Account Code:</span>
+                        <span class="confirmation-value">@newAccountCode</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Account Name:</span>
+                        <span class="confirmation-value">@newAccountName</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Account Type:</span>
+                        <span class="confirmation-value">@newAccountType</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Description:</span>
+                        <span class="confirmation-value">@(string.IsNullOrWhiteSpace(newDescription) ? "-" : newDescription)</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer confirmation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseConfirmModal">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="SaveAccount" disabled="@isSaving">
+                    @(isSaving ? "Saving..." : "Confirm")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Add -->
+@if (showCancelAddModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Add Account?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelAddModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelAddModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelAdd">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Edit -->
+@if (showCancelEditModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Edit Account?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelEditModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelEditModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelEdit">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Success Modal -->
+@if (showSuccessModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-content modal-success" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Success!</h3>
+                <button class="modal-close" @onclick="CloseSuccessModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="success-icon">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <p>@successMessage</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-submit" @onclick="CloseSuccessModal">OK</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ChartOfAccount>? accounts;
+    private ChartOfAccount? editingAccount;
+    private bool isLoading = true;
+    private bool showModal = false;
+    private bool showConfirmModal = false;
+    private bool showCancelAddModal = false;
+    private bool showCancelEditModal = false;
+    private bool showSuccessModal = false;
+    private bool isSaving = false;
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private string searchQuery = string.Empty;
+
+    private string newAccountCode = string.Empty;
+    private string newAccountName = string.Empty;
+    private string newAccountType = string.Empty;
+    private string? newDescription = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAccounts();
+    }
+
+    private async Task LoadAccounts()
+    {
+        try
+        {
+            isLoading = true;
+            accounts = await ChartOfAccountService.GetAccountsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading accounts: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private IEnumerable<ChartOfAccount> filteredAccounts
+    {
+        get
+        {
+            IEnumerable<ChartOfAccount> filtered = accounts ?? new List<ChartOfAccount>();
+            
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                filtered = filtered.Where(a =>
+                    a.account_code.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    a.account_name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    a.account_type.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    (a.description != null && a.description.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                );
+            }
+            
+            return filtered.OrderBy(a => a.account_id);
+        }
+    }
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+
+    private IEnumerable<ChartOfAccount> paginatedAccounts => filteredAccounts
+        .Skip((currentPage - 1) * pageSize)
+        .Take(pageSize);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+    {
+        pageSize = newPageSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private string GetAccountTypeClass(string accountType)
+    {
+        return accountType.ToLower() switch
+        {
+            "asset" => "primary",
+            "liability" => "warning",
+            "equity" => "info",
+            "revenue" => "success",
+            "expense" => "danger",
+            _ => "secondary"
+        };
+    }
+
+    private void ShowAddModal()
+    {
+        editingAccount = null;
+        newAccountCode = string.Empty;
+        newAccountName = string.Empty;
+        newAccountType = string.Empty;
+        newDescription = string.Empty;
+        showModal = true;
+    }
+
+    private void EditAccount(ChartOfAccount account)
+    {
+        editingAccount = account;
+        newAccountCode = account.account_code;
+        newAccountName = account.account_name;
+        newAccountType = account.account_type;
+        newDescription = account.description;
+        showModal = true;
+    }
+
+    private void ShowConfirmModal()
+    {
+        if (string.IsNullOrWhiteSpace(newAccountCode) || 
+            string.IsNullOrWhiteSpace(newAccountName) || 
+            string.IsNullOrWhiteSpace(newAccountType))
+        {
+            errorMessage = "Please fill in all required fields.";
+            return;
+        }
+        showConfirmModal = true;
+    }
+
+    private void CloseConfirmModal()
+    {
+        showConfirmModal = false;
+    }
+
+    private void ShowCancelAddModal()
+    {
+        showCancelAddModal = true;
+    }
+
+    private void CloseCancelAddModal()
+    {
+        showCancelAddModal = false;
+    }
+
+    private void ConfirmCancelAdd()
+    {
+        showCancelAddModal = false;
+        CloseModal();
+    }
+
+    private void ShowCancelEditModal()
+    {
+        showCancelEditModal = true;
+    }
+
+    private void CloseCancelEditModal()
+    {
+        showCancelEditModal = false;
+    }
+
+    private void ConfirmCancelEdit()
+    {
+        showCancelEditModal = false;
+        CloseModal();
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        editingAccount = null;
+        newAccountCode = string.Empty;
+        newAccountName = string.Empty;
+        newAccountType = string.Empty;
+        newDescription = string.Empty;
+    }
+
+    private async Task SaveAccount()
+    {
+        try
+        {
+            isSaving = true;
+            ClearMessages();
+            CloseConfirmModal();
+
+            var account = new ChartOfAccount
+            {
+                account_code = newAccountCode.Trim(),
+                account_name = newAccountName.Trim(),
+                account_type = newAccountType,
+                description = string.IsNullOrWhiteSpace(newDescription) ? null : newDescription.Trim(),
+                is_active = editingAccount != null ? editingAccount.is_active : true
+            };
+
+            if (editingAccount != null)
+            {
+                account.account_id = editingAccount.account_id;
+                await ChartOfAccountService.UpdateAccountAsync(account);
+                successMessage = "Account updated successfully!";
+            }
+            else
+            {
+                await ChartOfAccountService.CreateAccountAsync(account);
+                successMessage = "Account created successfully!";
+            }
+
+            await LoadAccounts();
+            CloseModal();
+            
+            await Task.Delay(100);
+            showSuccessModal = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error saving account: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseSuccessModal()
+    {
+        showSuccessModal = false;
+        successMessage = string.Empty;
+    }
+
+    private void ClearError() => errorMessage = string.Empty;
+    private void ClearMessages()
+    {
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+    }
+}
+

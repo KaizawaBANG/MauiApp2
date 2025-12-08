@@ -1,0 +1,450 @@
+@page "/general-ledger"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Models
+@using System.Linq
+@inject IAuthService AuthService
+@inject IGeneralLedgerService GeneralLedgerService
+@inject IChartOfAccountService ChartOfAccountService
+@inject NavigationManager Navigation
+
+<link href="css/accounting.css" rel="stylesheet" />
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+    <div class="main-content">
+        <div class="content-header">
+            <h1>General Ledger</h1>
+        </div>
+
+        <div class="inventory-section">
+            <div class="tab-section">
+                <div class="tabs">
+                    <button class="tab active">General Ledger</button>
+                </div>
+            </div>
+
+            <div class="product-table-container">
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                @if (isLoading)
+                {
+                    <div class="loading-indicator">
+                        <div class="spinner"></div>
+                        <span>Loading ledger entries...</span>
+                    </div>
+                }
+
+                <!-- Filters Section -->
+                <div class="report-filters">
+                    <div class="filter-row">
+                        <div class="form-group">
+                            <label>Start Date</label>
+                            <input type="date" class="form-control" @bind="startDate" />
+                        </div>
+                        <div class="form-group">
+                            <label>End Date</label>
+                            <input type="date" class="form-control" @bind="endDate" />
+                        </div>
+                        <div class="form-group">
+                            <label>Account</label>
+                            <select class="form-control" @bind="selectedAccountId" @bind:event="onchange">
+                                <option value="0">All Accounts</option>
+                                @if (accounts != null)
+                                {
+                                    @foreach (var account in accounts)
+                                    {
+                                        <option value="@account.account_id">@account.account_code - @account.account_name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button class="btn-generate" @onclick="LoadLedgerEntries">
+                                <i class="fas fa-search"></i>
+                                <span>Apply Filters</span>
+                            </button>
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button class="btn-secondary" @onclick="ClearFilters">
+                                <i class="fas fa-times"></i>
+                                <span>Clear</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="toolbar">
+                    <div class="search-container">
+                        <input type="text"
+                               class="search-input"
+                               placeholder="Search by account, description, or reference..."
+                               value="@searchQuery"
+                               @oninput="OnSearchInput" />
+                        <span class="search-icon"><i class="fas fa-search"></i></span>
+                    </div>
+                </div>
+
+                @if (ledgerEntries != null && ledgerEntries.Any())
+                {
+                    <div class="table-wrapper">
+                        <table class="product-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Account</th>
+                                    <th>Description</th>
+                                    <th>Reference</th>
+                                    <th>Debit</th>
+                                    <th>Credit</th>
+                                    <th>Created By</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var entry in paginatedEntries)
+                                {
+                                    <tr>
+                                        <td>@entry.transaction_date.ToString("MM/dd/yyyy HH:mm")</td>
+                                        <td>
+                                            <div>@(entry.account_code ?? "")</div>
+                                            <div class="text-muted">@(entry.account_name ?? "")</div>
+                                        </td>
+                                        <td>@entry.description</td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(entry.reference_type))
+                                            {
+                                                <span class="status-badge badge-primary">@entry.reference_type #@entry.reference_id</span>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </td>
+                                        <td class="@(entry.debit_amount > 0 ? "text-primary" : "")">
+                                            @if (entry.debit_amount > 0)
+                                            {
+                                                <span class="amount-with-indicator">
+                                                    <i class="fas @GetDebitIcon(entry.account_type)" style="color: @GetDebitColor(entry.account_type); margin-right: 4px;"></i>
+                                                    ₱@entry.debit_amount.ToString("N2")
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </td>
+                                        <td class="@(entry.credit_amount > 0 ? "text-success" : "")">
+                                            @if (entry.credit_amount > 0)
+                                            {
+                                                <span class="amount-with-indicator">
+                                                    <i class="fas @GetCreditIcon(entry.account_type)" style="color: @GetCreditColor(entry.account_type); margin-right: 4px;"></i>
+                                                    ₱@entry.credit_amount.ToString("N2")
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </td>
+                                        <td>@(entry.created_by_name ?? "Unknown")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (filteredEntries.Any())
+                    {
+                        <Pagination CurrentPage="@currentPage"
+                                    PageSize="@pageSize"
+                                    TotalItems="@filteredEntries.Count()"
+                                    PageChanged="@OnPageChanged"
+                                    PageSizeChanged="@OnPageSizeChanged" />
+                    }
+
+                    @if (selectedAccountId > 0 && accounts != null)
+                    {
+                        <div class="summary-card">
+                            <h3>Account Balance</h3>
+                            <div class="summary-value">
+                                ₱@accountBalance.ToString("N2")
+                            </div>
+                        </div>
+                    }
+                }
+                else if (!isLoading)
+                {
+                    <div class="empty-state">
+                        <i class="fas fa-book empty-state-icon"></i>
+                        <p class="empty-state-text">No ledger entries found for the selected filters.</p>
+                    </div>
+                }
+
+                <!-- Mobile Card View -->
+                <div class="product-cards-container">
+                    @if (ledgerEntries != null && ledgerEntries.Any())
+                    {
+                        @foreach (var entry in paginatedEntries)
+                        {
+                            <div class="product-card">
+                                <div class="product-card-header">
+                                    <h3 class="product-card-title">@(entry.account_code ?? "N/A")</h3>
+                                    <span class="product-info-value">@entry.transaction_date.ToString("MM/dd/yyyy")</span>
+                                </div>
+                                <div class="product-card-body">
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Account Name</span>
+                                        <span class="product-info-value">@(entry.account_name ?? "-")</span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Description</span>
+                                        <span class="product-info-value">@entry.description</span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Reference</span>
+                                        <span class="product-info-value">
+                                            @if (!string.IsNullOrEmpty(entry.reference_type))
+                                            {
+                                                <span class="status-badge badge-primary">@entry.reference_type #@entry.reference_id</span>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Debit</span>
+                                        <span class="product-info-value @(entry.debit_amount > 0 ? "text-primary" : "")">
+                                            @if (entry.debit_amount > 0)
+                                            {
+                                                <span class="amount-with-indicator">
+                                                    <i class="fas @GetDebitIcon(entry.account_type)" style="color: @GetDebitColor(entry.account_type); margin-right: 4px;"></i>
+                                                    ₱@entry.debit_amount.ToString("N2")
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Credit</span>
+                                        <span class="product-info-value @(entry.credit_amount > 0 ? "text-success" : "")">
+                                            @if (entry.credit_amount > 0)
+                                            {
+                                                <span class="amount-with-indicator">
+                                                    <i class="fas @GetCreditIcon(entry.account_type)" style="color: @GetCreditColor(entry.account_type); margin-right: 4px;"></i>
+                                                    ₱@entry.credit_amount.ToString("N2")
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Created By</span>
+                                        <span class="product-info-value">@(entry.created_by_name ?? "Unknown")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (!isLoading)
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-book empty-state-icon"></i>
+                            <p class="empty-state-text">No ledger entries found for the selected filters.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<MauiApp2.Models.GeneralLedger>? ledgerEntries;
+    private List<MauiApp2.Models.ChartOfAccount>? accounts;
+    private DateTime? startDate;
+    private DateTime? endDate;
+    private int selectedAccountId = 0;
+    private decimal accountBalance = 0;
+    private bool isLoading = true;
+    private string errorMessage = string.Empty;
+    private string searchQuery = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAccounts();
+        await LoadLedgerEntries();
+    }
+
+    private async Task LoadAccounts()
+    {
+        try
+        {
+            accounts = await ChartOfAccountService.GetAccountsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading accounts: {ex.Message}";
+        }
+    }
+
+    private async Task LoadLedgerEntries()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            currentPage = 1; // Reset to first page when filters change
+
+            int? accountId = selectedAccountId > 0 ? selectedAccountId : null;
+            ledgerEntries = await GeneralLedgerService.GetLedgerEntriesAsync(startDate, endDate, accountId);
+
+            if (selectedAccountId > 0)
+            {
+                accountBalance = await GeneralLedgerService.GetAccountBalanceAsync(selectedAccountId, endDate);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading ledger entries: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearFilters()
+    {
+        startDate = null;
+        endDate = null;
+        selectedAccountId = 0;
+        LoadLedgerEntries();
+    }
+
+    private void ClearError() => errorMessage = string.Empty;
+
+    private IEnumerable<MauiApp2.Models.GeneralLedger> filteredEntries
+    {
+        get
+        {
+            IEnumerable<MauiApp2.Models.GeneralLedger> filtered = ledgerEntries ?? new List<MauiApp2.Models.GeneralLedger>();
+            
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                filtered = filtered.Where(e =>
+                    (e.account_code != null && e.account_code.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    (e.account_name != null && e.account_name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    (e.description != null && e.description.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    (e.reference_type != null && e.reference_type.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                );
+            }
+            
+            return filtered.OrderByDescending(e => e.transaction_date).ThenBy(e => e.ledger_id);
+        }
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 25;
+
+    private IEnumerable<MauiApp2.Models.GeneralLedger> paginatedEntries => filteredEntries
+        .Skip((currentPage - 1) * pageSize)
+        .Take(pageSize);
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+    {
+        pageSize = newPageSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    // Get icon for debit based on account type
+    private string GetDebitIcon(string? accountType)
+    {
+        // For Assets and Expenses: Debit = Increase (↑)
+        // For Liabilities, Revenue, Equity: Debit = Decrease (↓)
+        if (accountType == "Asset" || accountType == "Expense")
+        {
+            return "fa-arrow-up"; // Increase
+        }
+        else
+        {
+            return "fa-arrow-down"; // Decrease
+        }
+    }
+
+    // Get icon for credit based on account type
+    private string GetCreditIcon(string? accountType)
+    {
+        // For Assets and Expenses: Credit = Decrease (↓)
+        // For Liabilities, Revenue, Equity: Credit = Increase (↑)
+        if (accountType == "Asset" || accountType == "Expense")
+        {
+            return "fa-arrow-down"; // Decrease
+        }
+        else
+        {
+            return "fa-arrow-up"; // Increase
+        }
+    }
+
+    // Get color for debit
+    private string GetDebitColor(string? accountType)
+    {
+        if (accountType == "Asset" || accountType == "Expense")
+        {
+            return "#16a34a"; // Green for increase
+        }
+        else
+        {
+            return "#dc2626"; // Red for decrease
+        }
+    }
+
+    // Get color for credit
+    private string GetCreditColor(string? accountType)
+    {
+        if (accountType == "Asset" || accountType == "Expense")
+        {
+            return "#dc2626"; // Red for decrease
+        }
+        else
+        {
+            return "#16a34a"; // Green for increase
+        }
+    }
+}
+

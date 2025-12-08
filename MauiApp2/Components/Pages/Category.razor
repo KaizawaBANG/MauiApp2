@@ -1,0 +1,1721 @@
+﻿@page "/categories"
+
+@layout MainLayout
+
+@using MauiApp2.Services
+
+@using MauiApp2.Models
+
+@using Microsoft.JSInterop
+
+@inject IAuthService AuthService
+
+@inject NavigationManager Navigation
+
+@inject ICategoryService CategoryService
+
+@inject IJSRuntime JSRuntime
+
+<link href="css/category.css" rel="stylesheet" />
+
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+
+    <Sidebar />
+
+    <div class="main-content">
+
+        <div class="content-header">
+
+            <h1>Category Management</h1>
+
+        </div>
+
+        <div class="inventory-section">
+
+            <div class="tab-section">
+
+                <div class="tabs">
+
+                    <button class="tab active">Category List</button>
+
+                </div>
+
+            </div>
+
+            <div class="product-table-container">
+
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+
+                {
+
+                    <div class="alert alert-error">
+
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+
+                        <span>@errorMessage</span>
+
+                        <button class="alert-close" @onclick="ClearErrorMessage"><i class="fas fa-times"></i></button>
+
+                    </div>
+
+                }
+
+                @if (!string.IsNullOrEmpty(successMessage))
+
+                {
+
+                    <div class="alert alert-success">
+
+                        <span class="alert-icon"><i class="fas fa-check-circle"></i></span>
+
+                        <span>@successMessage</span>
+
+                        <button class="alert-close" @onclick="ClearSuccessMessage"><i class="fas fa-times"></i></button>
+
+                    </div>
+
+                }
+
+                <!-- Loading Indicator -->
+                @if (isLoading)
+
+                {
+
+                    <div class="loading-indicator">
+
+                        <div class="spinner"></div>
+
+                        <span>Loading categories...</span>
+
+                    </div>
+
+                }
+
+                <div class="toolbar">
+
+                    <button class="add-item-btn" @onclick="ShowAddModal" disabled="@isLoading">
+                        <i class="fas fa-plus"></i>
+                        <span>Add Category</span>
+                    </button>
+
+                    <div class="search-container">
+
+                        <input type="text"
+                               class="search-input"
+                               placeholder="Search categories..."
+                               value="@searchQuery"
+                               @oninput="OnSearchInput"
+                               disabled="@isLoading" />
+
+                        <span class="search-icon"><i class="fas fa-search"></i></span>
+
+                    </div>
+
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="product-table">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>Code</th>
+
+                                <th>Category Name</th>
+
+                                <th>Description</th>
+
+                                <th>Actions</th>
+
+                            </tr>
+
+                        </thead>
+
+                    <tbody>
+
+                        @if (PaginatedCategories.Any())
+
+                        {
+
+                            @foreach (var category in PaginatedCategories)
+
+                            {
+
+                                <tr>
+
+                                    <td><strong>@(category.category_code ?? "N/A")</strong></td>
+
+                                    <td>@category.category_name</td>
+
+                                    <td>
+
+                                        @if (!string.IsNullOrEmpty(category.description))
+
+                                        {
+
+                                            <span>@category.description</span>
+
+                                        }
+
+                                        else
+
+                                        {
+
+                                            <span style="color: #9ca3af; font-style: italic;">No description</span>
+
+                                        }
+
+                                    </td>
+
+                                    <td>
+
+                                        <button class="edit-btn"
+                                                @onclick="() => ShowEditModal(category)"
+                                                disabled="@isLoading">
+                                            <i class="fas fa-edit"></i>
+                                            <span>Edit</span>
+                                        </button>
+
+                                    </td>
+
+                                </tr>
+
+                            }
+
+                        }
+
+                        else if (!isLoading)
+
+                        {
+
+                            <tr>
+
+                                <td colspan="4" class="empty-state-cell">
+                                    <div class="empty-state">
+                                        <i class="fas fa-folder-open empty-state-icon"></i>
+                                        @if (string.IsNullOrWhiteSpace(searchQuery))
+                                        {
+                                            <p class="empty-state-text">No categories found. Click "Add Category" to add your first category.</p>
+                                        }
+                                        else
+                                        {
+                                            <p class="empty-state-text">No categories match your search criteria.</p>
+                                        }
+                                    </div>
+                                </td>
+
+                            </tr>
+
+                        }
+
+                        </tbody>
+
+                    </table>
+                </div>
+
+                <!-- Mobile Card View -->
+                <div class="category-cards-container">
+                    @if (PaginatedCategories.Any())
+                    {
+                        @foreach (var category in PaginatedCategories)
+                        {
+                            <div class="category-card">
+                                <div class="category-card-header">
+                                    <div>
+                                        <h3 class="category-card-title">@category.category_name</h3>
+                                        <span class="category-card-code">@(category.category_code ?? "N/A")</span>
+                                    </div>
+                                    <button class="edit-btn" @onclick="() => ShowEditModal(category)" disabled="@isLoading">
+                                        <i class="fas fa-edit"></i>
+                                        <span>Edit</span>
+                                    </button>
+                                </div>
+                                <div class="category-card-body">
+                                    <div class="category-info-group">
+                                        <span class="category-info-label">Description</span>
+                                        <span class="category-info-value">
+                                            @if (!string.IsNullOrEmpty(category.description))
+                                            {
+                                                @category.description
+                                            }
+                                            else
+                                            {
+                                                <span style="color: #9ca3af; font-style: italic;">No description</span>
+                                            }
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (!isLoading)
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-folder-open empty-state-icon"></i>
+                            @if (string.IsNullOrWhiteSpace(searchQuery))
+                            {
+                                <p class="empty-state-text">No categories found. Click "Add Category" to add your first category.</p>
+                            }
+                            else
+                            {
+                                <p class="empty-state-text">No categories match your search criteria.</p>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Pagination -->
+                @if (FilteredCategories.Any())
+
+                {
+
+                    <Pagination CurrentPage="@currentPage"
+                                PageSize="@pageSize"
+                                TotalItems="@FilteredCategories.Count()"
+                                PageChanged="@OnPageChanged"
+                                PageSizeChanged="@OnPageSizeChanged" />
+
+                }
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- Add Category Modal -->
+@if (showAddModal)
+
+{
+
+    <div class="brand-modal-overlay">
+
+        <div class="brand-modal-content" @onclick:stopPropagation="true">
+
+            <div class="brand-modal-header">
+
+                <h3>Add New Category</h3>
+
+                <button class="modal-close" @onclick="ShowCancelAddModal"><i class="fas fa-times"></i></button>
+
+            </div>
+
+            <div class="brand-modal-body">
+
+                <!-- Validation Summary - Only show after submit attempt -->
+
+                <div class="brand-form-container">
+
+                    <div class="brand-form-group">
+
+                        <label>Category Code</label>
+
+                        <input type="text"
+                               class="brand-form-control @(hasAttemptedSubmit && HasError("CategoryCode") ? "input-error" : "")"
+                               @bind="newCategoryCode"
+                               @bind:event="oninput"
+                               placeholder="Auto-generated if left empty (max 4 chars)"
+                               maxlength="10"
+                               style="text-transform: uppercase;"
+                               disabled="@isLoading" />
+
+                        <small style="color: #6b7280; font-size: 0.875rem;">Leave empty to auto-generate from name</small>
+
+                        @if (hasAttemptedSubmit && HasError("CategoryCode"))
+
+                        {
+
+                            <span class="brand-field-error">@GetError("CategoryCode")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="brand-form-group">
+
+                        <label>Category Name *</label>
+
+                        <input type="text"
+                               class="brand-form-control @(hasAttemptedSubmit && HasError("CategoryName") ? "input-error" : "")"
+                               @bind="newCategoryName"
+                               @bind:event="oninput"
+                               placeholder="Enter category name"
+                               maxlength="100"
+                               disabled="@isLoading" />
+
+                        @if (hasAttemptedSubmit && HasError("CategoryName"))
+
+                        {
+
+                            <span class="brand-field-error">@GetError("CategoryName")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="brand-form-group">
+
+                        <label>Description</label>
+
+                        <textarea class="brand-form-control brand-textarea"
+                                  @bind="newDescription"
+                                  @bind:event="oninput"
+                                  placeholder="Enter category description (optional)"
+                                  maxlength="500"
+                                  rows="4"
+                                  disabled="@isLoading"></textarea>
+
+                        <div class="character-count">
+
+                            @newDescription.Length/500 characters
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="brand-modal-footer">
+
+                <button class="brand-btn-cancel" @onclick="ShowCancelAddModal" disabled="@isLoading">Cancel</button>
+
+                <button class="brand-btn-submit" @onclick="ShowAddCategoryConfirmation" disabled="@(isLoading || !CanSubmitAddForm())">
+
+                    @if (isLoading)
+
+                    {
+
+                        <span class="button-spinner"></span>
+
+                    }
+
+                    Add Category
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+}
+
+<!-- Edit Category Modal -->
+@if (showEditModal && editingCategory != null)
+
+{
+
+    <div class="brand-modal-overlay">
+
+        <div class="brand-modal-content" @onclick:stopPropagation="true">
+
+            <div class="brand-modal-header">
+
+                <h3>Edit Category</h3>
+
+                <button class="modal-close" @onclick="ShowCancelEditModal"><i class="fas fa-times"></i></button>
+
+            </div>
+
+            <div class="brand-modal-body">
+
+
+                <div class="brand-form-container">
+
+                    <div class="brand-form-group">
+
+                        <label>Category Code</label>
+
+                        <input type="text"
+                               class="brand-form-control @(hasAttemptedEditSubmit && HasEditError("CategoryCode") ? "input-error" : "")"
+                               @bind="editCategoryCode"
+                               @bind:event="oninput"
+                               placeholder="Category code (max 10 chars)"
+                               maxlength="10"
+                               style="text-transform: uppercase;"
+                               disabled="@isLoading" />
+
+                        @if (hasAttemptedEditSubmit && HasEditError("CategoryCode"))
+
+                        {
+
+                            <span class="brand-field-error">@GetEditError("CategoryCode")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="brand-form-group">
+
+                        <label>Category Name *</label>
+
+                        <input type="text"
+                               class="brand-form-control @(hasAttemptedEditSubmit && HasEditError("CategoryName") ? "input-error" : "")"
+                               @bind="editCategoryName"
+                               @bind:event="oninput"
+                               placeholder="Enter category name"
+                               maxlength="100"
+                               disabled="@isLoading" />
+
+                        @if (hasAttemptedEditSubmit && HasEditError("CategoryName"))
+
+                        {
+
+                            <span class="brand-field-error">@GetEditError("CategoryName")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="brand-form-group">
+
+                        <label>Description</label>
+
+                        <textarea class="brand-form-control brand-textarea"
+                                  @bind="editDescription"
+                                  @bind:event="oninput"
+                                  placeholder="Enter category description (optional)"
+                                  maxlength="500"
+                                  rows="4"
+                                  disabled="@isLoading"></textarea>
+
+                        <div class="character-count">
+
+                            @editDescription.Length/500 characters
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="brand-modal-footer">
+
+                <button class="brand-btn-cancel" @onclick="ShowCancelEditModal" disabled="@isLoading">Cancel</button>
+
+                <button class="brand-btn-submit" @onclick="ShowUpdateCategoryConfirmation" disabled="@(isLoading || !CanSubmitEditForm())">
+
+                    @if (isLoading)
+
+                    {
+
+                        <span class="button-spinner"></span>
+
+                    }
+
+                    Update Category
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+}
+
+<!-- Confirmation Modal for Add Category -->
+@if (showAddCategoryConfirmation)
+{
+    <div class="modal-overlay confirmation-modal-overlay">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header confirmation-modal-header">
+                <h3>Confirm Add Category</h3>
+                <button class="modal-close" @onclick="CloseAddCategoryConfirmation"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body confirmation-modal-body">
+                <div class="confirmation-message-box">
+                    <p class="confirmation-question">Are you sure you want to add this category?</p>
+                </div>
+                <div class="confirmation-details">
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Category Code:</span>
+                        <span class="confirmation-value code-value">@(string.IsNullOrWhiteSpace(newCategoryCode) ? "N/A" : newCategoryCode.ToUpper())</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Category Name:</span>
+                        <span class="confirmation-value">@newCategoryName</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Description:</span>
+                        <span class="confirmation-value">@(string.IsNullOrWhiteSpace(newDescription) ? "N/A" : newDescription)</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer confirmation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseAddCategoryConfirmation">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmAddCategory" disabled="@(!CanSubmitAddForm())">Confirm Add</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Confirmation Modal for Update Category -->
+@if (showUpdateCategoryConfirmation)
+{
+    <div class="modal-overlay" style="z-index: 3000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: white; border-radius: 12px; padding: 0; max-width: 500px; width: 90%;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Confirm Update Category</h3>
+                <button class="modal-close" @onclick="CloseUpdateCategoryConfirmation"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning" style="margin-bottom: 20px;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Are you sure you want to update this category?</span>
+                </div>
+                <div style="padding: 15px; background-color: #f9fafb; border-radius: 8px; margin-bottom: 15px;">
+                    <p><strong>Category Code:</strong> @(string.IsNullOrWhiteSpace(editCategoryCode) ? "N/A" : editCategoryCode.ToUpper())</p>
+                    <p><strong>Category Name:</strong> @editCategoryName</p>
+                    <p><strong>Description:</strong> @(string.IsNullOrWhiteSpace(editDescription) ? "N/A" : editDescription)</p>
+                </div>
+                <p style="color: #6b7280; font-size: 0.875rem;">This action will permanently update the category information.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="CloseUpdateCategoryConfirmation">Cancel</button>
+                <button class="btn-submit" @onclick="ConfirmUpdateCategory" disabled="@(!CanSubmitEditForm())">Confirm Update</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Add Category -->
+@if (showCancelAddModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Add Category?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelAddModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelAddModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelAddModal">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Edit Category -->
+@if (showCancelEditModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Edit Category?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelEditModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelEditModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelEditModal">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Success Modal -->
+@if (showSuccessModal)
+{
+    <div class="modal-overlay success-modal-overlay">
+        <div class="modal-content success-modal" @onclick:stopPropagation="true">
+            <div class="modal-header success-modal-header">
+                <h3>
+                    <i class="fas fa-check-circle"></i>
+                    Success!
+                </h3>
+                <button class="modal-close" @onclick="CloseSuccessModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body success-modal-body">
+                <div class="success-icon-container">
+                    <i class="fas fa-check-circle success-icon"></i>
+                </div>
+                <p class="success-message">@successModalMessage</p>
+            </div>
+            <div class="modal-footer success-modal-footer">
+                <button class="btn-submit" @onclick="CloseSuccessModal">OK</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+
+    private string searchQuery = "";
+
+    private List<MauiApp2.Models.Category> categories = new();
+
+    private bool showAddModal = false;
+
+    private bool showEditModal = false;
+
+    private bool showAddCategoryConfirmation = false;
+
+    private bool showUpdateCategoryConfirmation = false;
+
+    private bool showCancelAddModal = false;
+
+    private bool showCancelEditModal = false;
+
+    private MauiApp2.Models.Category? editingCategory = null;
+
+    private bool isLoading = false;
+
+    // Track submit attempts for validation display
+
+    private bool hasAttemptedSubmit = false;
+
+    private bool hasAttemptedEditSubmit = false;
+
+    // Add form fields
+
+    private string newCategoryCode = "";
+
+    private string newCategoryName = "";
+
+    private string newDescription = "";
+
+    // Edit form fields
+
+    private string editCategoryCode = "";
+
+    private string editCategoryName = "";
+
+    private string editDescription = "";
+
+    // Messages and validation
+
+    private string errorMessage = "";
+
+    private string successMessage = "";
+
+    private bool showSuccessModal = false;
+
+    private string successModalMessage = "";
+
+    private List<string> validationErrors = new List<string>();
+
+    private List<string> editValidationErrors = new List<string>();
+
+    // Pagination
+
+    private int currentPage = 1;
+
+    private int pageSize = 10;
+
+    protected override async Task OnInitializedAsync()
+
+    {
+
+        try
+
+        {
+
+            if (CategoryService == null)
+
+            {
+
+                errorMessage = "CategoryService is not available. Please check service registration.";
+
+                Console.WriteLine("CategoryService is null");
+
+                return;
+
+            }
+
+            await LoadCategories();
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error initializing: {ex.Message}";
+
+            Console.WriteLine($"OnInitializedAsync error: {ex}");
+
+        }
+
+    }
+
+    private async Task LoadCategories()
+
+    {
+
+        try
+
+        {
+
+            isLoading = true;
+
+            errorMessage = "";
+
+            StateHasChanged();
+
+            if (CategoryService == null)
+
+            {
+
+                errorMessage = "CategoryService is not available. Please check service registration.";
+
+                Console.WriteLine("CategoryService is null in LoadCategories");
+
+                categories = new List<MauiApp2.Models.Category>();
+
+                return;
+
+            }
+
+            var loadedCategories = await CategoryService.GetCategoriesAsync();
+
+            if (loadedCategories == null)
+
+            {
+
+                categories = new List<MauiApp2.Models.Category>();
+
+            }
+            else
+            {
+                // Sort by category_id in ascending order
+                categories = loadedCategories.OrderBy(c => c.category_id).ToList();
+            }
+
+            Console.WriteLine($"Loaded {categories.Count} categories");
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error loading categories: {ex.Message}";
+
+            Console.WriteLine($"LoadCategories error: {ex}");
+
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+
+            categories = new List<MauiApp2.Models.Category>();
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+    private IEnumerable<MauiApp2.Models.Category> FilteredCategories
+
+    {
+
+        get
+
+        {
+
+            IEnumerable<MauiApp2.Models.Category> result;
+
+            if (string.IsNullOrWhiteSpace(searchQuery))
+
+                result = categories;
+
+            else
+
+                result = categories.Where(c =>
+
+                    c.category_name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+
+                    (c.category_code != null && c.category_code.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+
+                    (c.description != null && c.description.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+
+                    c.category_id.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+
+            // Sort by category_id in ascending order
+            return result.OrderBy(c => c.category_id);
+
+        }
+
+    }
+
+    private IEnumerable<MauiApp2.Models.Category> PaginatedCategories
+
+    {
+
+        get
+
+        {
+
+            var filtered = FilteredCategories.ToList();
+
+            return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
+
+        }
+
+    }
+
+    private void OnPageChanged(int page)
+
+    {
+
+        currentPage = page;
+
+        StateHasChanged();
+
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+
+    {
+
+        pageSize = newPageSize;
+
+        currentPage = 1;
+
+        StateHasChanged();
+
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+
+    {
+
+        searchQuery = e.Value?.ToString() ?? "";
+
+        currentPage = 1;
+
+    }
+
+    // Modal Methods
+
+    private void ShowAddModal()
+
+    {
+
+        showAddModal = true;
+
+        hasAttemptedSubmit = false; // Reset submit attempt flag
+
+        ClearMessages();
+
+        ResetAddForm();
+
+        StateHasChanged();
+
+    }
+
+    private void ShowCancelAddModal()
+    {
+        showCancelAddModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseCancelAddModal()
+    {
+        showCancelAddModal = false;
+        StateHasChanged();
+    }
+
+    private void ConfirmCancelAddModal()
+    {
+        showCancelAddModal = false;
+        CloseAddModal();
+    }
+
+    private void CloseAddModal()
+
+    {
+
+        showAddModal = false;
+
+        hasAttemptedSubmit = false; // Reset submit attempt flag
+
+        ResetAddForm();
+
+        StateHasChanged();
+
+    }
+
+    private void ShowEditModal(MauiApp2.Models.Category category)
+
+    {
+
+        editingCategory = category;
+
+        showEditModal = true;
+
+        hasAttemptedEditSubmit = false; // Reset submit attempt flag
+
+        ClearMessages();
+
+        // Populate edit form
+
+        editCategoryCode = category.category_code ?? "";
+
+        editCategoryName = category.category_name;
+
+        editDescription = category.description ?? "";
+
+        StateHasChanged();
+
+    }
+
+    private void ShowCancelEditModal()
+    {
+        showCancelEditModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseCancelEditModal()
+    {
+        showCancelEditModal = false;
+        StateHasChanged();
+    }
+
+    private void ConfirmCancelEditModal()
+    {
+        showCancelEditModal = false;
+        CloseEditModal();
+    }
+
+    private void CloseEditModal()
+
+    {
+
+        showEditModal = false;
+
+        editingCategory = null;
+
+        hasAttemptedEditSubmit = false; // Reset submit attempt flag
+
+        ResetEditForm();
+
+        StateHasChanged();
+
+    }
+
+    // Form Methods
+
+    private void ResetAddForm()
+
+    {
+
+        newCategoryCode = "";
+
+        newCategoryName = "";
+
+        newDescription = "";
+
+        validationErrors.Clear();
+
+        hasAttemptedSubmit = false;
+
+    }
+
+    private void ResetEditForm()
+
+    {
+
+        editCategoryCode = "";
+
+        editCategoryName = "";
+
+        editDescription = "";
+
+        editValidationErrors.Clear();
+
+        hasAttemptedEditSubmit = false;
+
+    }
+
+    private void ClearMessages()
+
+    {
+
+        errorMessage = "";
+
+        successMessage = "";
+
+        validationErrors.Clear();
+
+        editValidationErrors.Clear();
+
+    }
+
+    private void ClearErrorMessage() => errorMessage = "";
+
+    private void ClearSuccessMessage() => successMessage = "";
+
+    private void CloseSuccessModal()
+    {
+        showSuccessModal = false;
+        successModalMessage = "";
+        StateHasChanged();
+    }
+
+    // Validation Methods
+
+    private void ValidateAddForm()
+
+    {
+
+        validationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(newCategoryName))
+
+        {
+
+            AddValidationError("CategoryName", "Category name is required");
+
+        }
+
+        else if (newCategoryName.Trim().Length < 2)
+
+        {
+
+            AddValidationError("CategoryName", "Category name must be at least 2 characters long");
+
+        }
+
+        else if (categories.Any(c => c.category_name.Equals(newCategoryName.Trim(), StringComparison.OrdinalIgnoreCase)))
+
+        {
+
+            AddValidationError("CategoryName", "Category name already exists");
+
+        }
+
+        // Validate code if provided
+
+        if (!string.IsNullOrWhiteSpace(newCategoryCode))
+
+        {
+
+            var code = newCategoryCode.Trim().ToUpper();
+
+            if (code.Length > 10)
+
+            {
+
+                AddValidationError("CategoryCode", "Category code must be 10 characters or less");
+
+            }
+
+            else if (categories.Any(c => c.category_code != null && c.category_code.Equals(code, StringComparison.OrdinalIgnoreCase)))
+
+            {
+
+                AddValidationError("CategoryCode", "Category code already exists");
+
+            }
+
+        }
+
+    }
+
+    private void ValidateEditForm()
+
+    {
+
+        editValidationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(editCategoryName))
+
+        {
+
+            AddEditValidationError("CategoryName", "Category name is required");
+
+        }
+
+        else if (editCategoryName.Trim().Length < 2)
+
+        {
+
+            AddEditValidationError("CategoryName", "Category name must be at least 2 characters long");
+
+        }
+
+        else if (categories.Any(c => c.category_name.Equals(editCategoryName.Trim(), StringComparison.OrdinalIgnoreCase) && c.category_id != editingCategory?.category_id))
+
+        {
+
+            AddEditValidationError("CategoryName", "Category name already exists");
+
+        }
+
+        // Validate code if provided
+
+        if (!string.IsNullOrWhiteSpace(editCategoryCode))
+
+        {
+
+            var code = editCategoryCode.Trim().ToUpper();
+
+            if (code.Length > 10)
+
+            {
+
+                AddEditValidationError("CategoryCode", "Category code must be 10 characters or less");
+
+            }
+
+            else if (categories.Any(c => c.category_code != null && c.category_code.Equals(code, StringComparison.OrdinalIgnoreCase) && c.category_id != editingCategory?.category_id))
+
+            {
+
+                AddEditValidationError("CategoryCode", "Category code already exists");
+
+            }
+
+        }
+
+    }
+
+    private void AddValidationError(string field, string message)
+
+    {
+
+        validationErrors.Add($"{field}: {message}");
+
+    }
+
+    private void AddEditValidationError(string field, string message)
+
+    {
+
+        editValidationErrors.Add($"{field}: {message}");
+
+    }
+
+    private bool HasError(string field)
+
+    {
+
+        return validationErrors.Any(error => error.StartsWith($"{field}:"));
+
+    }
+
+    private bool HasEditError(string field)
+
+    {
+
+        return editValidationErrors.Any(error => error.StartsWith($"{field}:"));
+
+    }
+
+    private string GetError(string field)
+
+    {
+
+        return validationErrors.FirstOrDefault(error => error.StartsWith($"{field}:"))?.Split(':')[1]?.Trim() ?? "";
+
+    }
+
+    private string GetEditError(string field)
+
+    {
+
+        return editValidationErrors.FirstOrDefault(error => error.StartsWith($"{field}:"))?.Split(':')[1]?.Trim() ?? "";
+
+    }
+
+    private bool IsFormValid
+
+    {
+
+        get
+
+        {
+
+            // Only validate if user has attempted to submit
+
+            if (!hasAttemptedSubmit)
+
+                return true;
+
+            ValidateAddForm();
+
+            return validationErrors.Count == 0 && !string.IsNullOrWhiteSpace(newCategoryName);
+
+        }
+
+    }
+
+    private bool IsEditFormValid
+
+    {
+
+        get
+
+        {
+
+            // Only validate if user has attempted to submit
+
+            if (!hasAttemptedEditSubmit)
+
+                return true;
+
+            ValidateEditForm();
+
+            return editValidationErrors.Count == 0 && !string.IsNullOrWhiteSpace(editCategoryName);
+
+        }
+
+    }
+
+    // Check if all required fields are filled for Add form
+    private bool CanSubmitAddForm()
+    {
+        return !string.IsNullOrWhiteSpace(newCategoryName);
+    }
+
+    // Check if form can be submitted (all required fields filled AND changes made)
+    private bool CanSubmitEditForm()
+    {
+        if (editingCategory == null)
+            return false;
+
+        // First check if all required fields are filled
+        bool allFieldsFilled = !string.IsNullOrWhiteSpace(editCategoryName);
+
+        if (!allFieldsFilled)
+            return false;
+
+        // Then check if any changes have been made
+        bool hasChanges = editCategoryName.Trim() != editingCategory.category_name ||
+                         editCategoryCode != (editingCategory.category_code ?? "") ||
+                         editDescription != (editingCategory.description ?? "");
+
+        return hasChanges;
+    }
+
+    // Confirmation Modal Methods
+    private void ShowAddCategoryConfirmation()
+    {
+        Console.WriteLine("ShowAddCategoryConfirmation called");
+        hasAttemptedSubmit = true;
+        errorMessage = "";
+        validationErrors.Clear();
+        StateHasChanged();
+
+        ValidateAddForm();
+
+        if (validationErrors.Any())
+        {
+            errorMessage = "Please fix the validation errors before submitting.";
+            Console.WriteLine($"Validation failed. Errors: {string.Join(", ", validationErrors)}");
+            StateHasChanged();
+            return;
+        }
+
+        Console.WriteLine("Validation passed, showing confirmation modal");
+        showAddCategoryConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseAddCategoryConfirmation()
+    {
+        showAddCategoryConfirmation = false;
+        StateHasChanged();
+    }
+
+    private void ShowUpdateCategoryConfirmation()
+    {
+        hasAttemptedEditSubmit = true;
+        errorMessage = "";
+        editValidationErrors.Clear();
+        StateHasChanged();
+
+        ValidateEditForm();
+
+        if (editValidationErrors.Any())
+        {
+            errorMessage = "Please fix the validation errors before submitting.";
+            StateHasChanged();
+            return;
+        }
+
+        if (editingCategory == null)
+        {
+            errorMessage = "Error: No category selected for editing.";
+            StateHasChanged();
+            return;
+        }
+
+        showUpdateCategoryConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseUpdateCategoryConfirmation()
+    {
+        showUpdateCategoryConfirmation = false;
+        StateHasChanged();
+    }
+
+    // CRUD Operations
+
+    private async Task ConfirmAddCategory()
+    {
+        Console.WriteLine("ConfirmAddCategory called");
+        showAddCategoryConfirmation = false;
+        // Keep add modal open during the operation
+        StateHasChanged();
+        await AddCategory();
+    }
+
+    private async Task AddCategory()
+
+    {
+
+        try
+
+        {
+
+            // Check if service is available
+
+            if (CategoryService == null)
+
+            {
+
+                errorMessage = "CategoryService is not available. Please check service registration.";
+
+                Console.WriteLine("CategoryService is null in AddCategory");
+
+                StateHasChanged();
+
+                return;
+
+            }
+
+            isLoading = true;
+
+            StateHasChanged();
+
+            // Create category object
+
+            var newCategory = new MauiApp2.Models.Category
+
+            {
+
+                category_code = string.IsNullOrWhiteSpace(newCategoryCode) ? null : newCategoryCode.Trim().ToUpper(),
+
+                category_name = newCategoryName.Trim(),
+
+                description = string.IsNullOrWhiteSpace(newDescription) ? null : newDescription.Trim()
+
+            };
+
+            Console.WriteLine($"Attempting to add category: {newCategory.category_name}");
+
+            // Call service to create category
+
+            var categoryId = await CategoryService.CreateCategoryAsync(newCategory);
+
+            Console.WriteLine($"Category created successfully with ID: {categoryId}");
+
+            if (categoryId > 0)
+
+            {
+
+                // Refresh the list
+                await LoadCategories();
+
+                // Close modal
+                CloseAddModal();
+                CloseAddCategoryConfirmation();
+
+                await Task.Delay(100);
+
+                // Show success modal
+                successModalMessage = $"Category '{newCategory.category_name}' added successfully!";
+                showSuccessModal = true;
+                StateHasChanged();
+
+            }
+
+            else
+
+            {
+
+                errorMessage = "Failed to create category. Please try again.";
+
+            }
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error adding category: {ex.Message}";
+
+            Console.WriteLine($"AddCategory error: {ex}");
+
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+
+            // Log inner exception if available
+
+            if (ex.InnerException != null)
+
+            {
+
+                Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+
+                errorMessage += $" ({ex.InnerException.Message})";
+
+            }
+
+            // Keep the add modal open if there's an error
+            // Don't close it so user can see the error and retry
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+    private async Task ConfirmUpdateCategory()
+    {
+        showUpdateCategoryConfirmation = false;
+        await UpdateCategory();
+    }
+
+    private async Task UpdateCategory()
+
+    {
+
+        try
+
+        {
+
+            // Check if service is available
+
+            if (CategoryService == null)
+
+            {
+
+                errorMessage = "CategoryService is not available. Please check service registration.";
+
+                Console.WriteLine("CategoryService is null in UpdateCategory");
+
+                StateHasChanged();
+
+                return;
+
+            }
+
+            isLoading = true;
+
+            StateHasChanged();
+
+            // Create updated category object
+
+            var updatedCategory = new MauiApp2.Models.Category
+
+            {
+
+                category_id = editingCategory.category_id,
+
+                category_code = string.IsNullOrWhiteSpace(editCategoryCode) ? null : editCategoryCode.Trim().ToUpper(),
+
+                category_name = editCategoryName.Trim(),
+
+                description = string.IsNullOrWhiteSpace(editDescription) ? null : editDescription.Trim()
+
+            };
+
+            Console.WriteLine($"Attempting to update category ID {updatedCategory.category_id}: {updatedCategory.category_name}");
+
+            // Call service to update category
+
+            var success = await CategoryService.UpdateCategoryAsync(updatedCategory);
+
+            if (success)
+
+            {
+
+                Console.WriteLine("Category updated successfully");
+
+                // Refresh the list
+                await LoadCategories();
+
+                // Close modal
+                CloseEditModal();
+                CloseUpdateCategoryConfirmation();
+
+                await Task.Delay(100);
+
+                // Show success modal
+                successModalMessage = $"Category '{editCategoryName}' updated successfully!";
+                showSuccessModal = true;
+                StateHasChanged();
+
+            }
+
+            else
+
+            {
+
+                errorMessage = "Failed to update category. Please try again.";
+
+            }
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error updating category: {ex.Message}";
+
+            Console.WriteLine($"UpdateCategory error: {ex}");
+
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+
+            // Log inner exception if available
+
+            if (ex.InnerException != null)
+
+            {
+
+                Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+
+                errorMessage += $" ({ex.InnerException.Message})";
+
+            }
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+    private async Task DeleteCategory(int categoryId)
+
+    {
+
+        var categoryToDelete = categories.FirstOrDefault(c => c.category_id == categoryId);
+
+        if (categoryToDelete == null) return;
+
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to delete category '{categoryToDelete.category_name}'?"))
+
+            return;
+
+        try
+
+        {
+
+            isLoading = true;
+
+            StateHasChanged();
+
+            if (CategoryService == null)
+
+            {
+
+                errorMessage = "CategoryService is not available. Please check service registration.";
+
+                return;
+
+            }
+
+            var success = await CategoryService.DeleteCategoryAsync(categoryId);
+
+            if (success)
+
+            {
+
+                successMessage = $"Category '{categoryToDelete.category_name}' deleted successfully!";
+
+                await LoadCategories(); // Refresh the list
+
+            }
+
+            else
+
+            {
+
+                errorMessage = "Failed to delete category. Please try again.";
+
+            }
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error deleting category: {ex.Message}";
+
+            Console.WriteLine($"DeleteCategory error: {ex}");
+
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+}

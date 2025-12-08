@@ -1,0 +1,213 @@
+﻿@page "/"
+@page "/login"
+
+@using MauiApp2.Services
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+
+<head>
+    <link href="css/login.css" rel="stylesheet" />
+</head>
+
+@if (isLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner"></div>
+    </div>
+}
+
+<div class="login-container">
+    <div class="login-wrapper">
+        <!-- Left side: Branding -->
+        <div class="branding-section">
+            <div class="branding-content">
+                <div class="logo-container">
+                    <img src="/images/quad3.png" alt="QuadTech Logo" class="logo" />
+                </div>
+                <h1 class="company-name"><span class="quad">Quad</span><span class="tech">Tech</span></h1>
+                <p class="tagline">Innovative Solutions for Tomorrow's Technology</p>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                        <span>Enterprise-grade Security</span>
+                    </div>
+                    <div class="feature-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                        <span>24/7 System Monitoring</span>
+                    </div>
+                    <div class="feature-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                        <span>Advanced Analytics</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right side: Login form -->
+        <div class="login-section">
+            <div class="login-content">
+                <div class="login-header">
+                    <h2 class="login-title">Welcome Back</h2>
+                    <p class="login-subtitle">Sign in to continue to your dashboard</p>
+                </div>
+
+                <div class="form-group">
+                    <label class="input-label">Username or Email</label>
+                    <div class="input-wrapper @(showUsernameError ? "input-error" : "")">
+                        <div class="input-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                        </div>
+                        <input @bind="username" @bind:event="oninput"
+                               @onkeypress="HandleKeyPress"
+                               class="form-control"
+                               placeholder="Enter your username or email" />
+                    </div>
+                    @if (showUsernameError)
+                    {
+                        <div class="error-message">Please input username or email</div>
+                    }
+                </div>
+
+                <div class="form-group">
+                    <label class="input-label">Password</label>
+                    <div class="input-wrapper @(showPasswordError ? "input-error" : "")">
+                        <div class="input-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                            </svg>
+                        </div>
+                        <input @bind="password"
+                               @bind:event="oninput"
+                               @onkeypress="HandleKeyPress"
+                               type="password"
+                               class="form-control"
+                               placeholder="Enter your password" />
+                    </div>
+                    @if (showPasswordError)
+                    {
+                        <div class="error-message">Please input password</div>
+                    }
+                </div>
+
+                <div class="form-options">
+                    <a href="#" class="forgot-password">Forgot password?</a>
+                </div>
+
+                @if (!string.IsNullOrEmpty(loginErrorMessage))
+                {
+                    <div class="login-error-message">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        @loginErrorMessage
+                    </div>
+                }
+
+                <button class="login-btn" @onclick="HandleLogin" disabled="@isLoading">
+                    @if (isLoading)
+                    {
+                        <span class="loading">Logging in...</span>
+                    }
+                    else
+                    {
+                        <span>Sign In</span>
+                    }
+                </button>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string username = string.Empty;
+    private string password = string.Empty;
+    private bool isLoading = false;
+    private bool showUsernameError = false;
+    private bool showPasswordError = false;
+    private string loginErrorMessage = string.Empty;
+
+    private void ClearErrors()
+    {
+        showUsernameError = false;
+        showPasswordError = false;
+        loginErrorMessage = string.Empty;
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !isLoading)
+        {
+            await HandleLogin();
+        }
+    }
+
+    private async Task HandleLogin()
+    {
+        ClearErrors();
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Validate input
+            bool hasError = false;
+
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                showUsernameError = true;
+                hasError = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(password))
+            {
+                showPasswordError = true;
+                hasError = true;
+            }
+
+            if (hasError)
+            {
+                isLoading = false;
+                StateHasChanged();
+                return;
+            }
+
+            // Attempt login with database
+            var result = await AuthService.LoginAsync(username.Trim(), password);
+
+            if (result)
+            {
+                Console.WriteLine($"Login successful for user: {username}");
+                Navigation.NavigateTo("/dashboard");
+            }
+            else
+            {
+                loginErrorMessage = "Invalid username/email or password. Please check your credentials and try again.";
+                isLoading = false;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Login error: {ex.Message}");
+            loginErrorMessage = "An error occurred during login. Please try again.";
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}

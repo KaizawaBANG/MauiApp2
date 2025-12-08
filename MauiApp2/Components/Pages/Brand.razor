@@ -1,0 +1,1497 @@
+﻿@page "/brands"
+
+@layout MainLayout
+
+@using MauiApp2.Services
+
+@using MauiApp2.Models
+
+@using Microsoft.JSInterop
+
+@inject IAuthService AuthService
+
+@inject NavigationManager Navigation
+
+@inject IBrandService BrandService
+
+@inject IJSRuntime JSRuntime
+
+<link href="css/brand.css" rel="stylesheet" />
+
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+
+    <Sidebar />
+
+    <div class="main-content">
+
+        <div class="content-header">
+
+            <h1>Brand Management</h1>
+
+        </div>
+
+        <div class="inventory-section">
+
+            <div class="tab-section">
+
+                <div class="tabs">
+
+                    <button class="tab active">Brand List</button>
+
+                </div>
+
+            </div>
+
+            <div class="product-table-container">
+
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+
+                {
+
+                    <div class="alert alert-error">
+
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+
+                        <span>@errorMessage</span>
+
+                        <button class="alert-close" @onclick="ClearErrorMessage"><i class="fas fa-times"></i></button>
+
+                    </div>
+
+                }
+
+                @if (!string.IsNullOrEmpty(successMessage))
+
+                {
+
+                    <div class="alert alert-success">
+
+                        <span class="alert-icon"><i class="fas fa-check-circle"></i></span>
+
+                        <span>@successMessage</span>
+
+                        <button class="alert-close" @onclick="ClearSuccessMessage"><i class="fas fa-times"></i></button>
+
+                    </div>
+
+                }
+
+                <!-- Loading Indicator -->
+                @if (isLoading)
+
+                {
+
+                    <div class="loading-indicator">
+
+                        <div class="spinner"></div>
+
+                        <span>Loading brands...</span>
+
+                    </div>
+
+                }
+
+                <div class="toolbar">
+
+                    <button class="add-item-btn" @onclick="ShowAddModal" disabled="@isLoading">
+                        <i class="fas fa-plus"></i>
+                        <span>Add Brand</span>
+                    </button>
+
+                    <div class="search-container">
+
+                        <input type="text"
+                               class="search-input"
+                               placeholder="Search brands..."
+                               value="@searchQuery"
+                               @oninput="OnSearchInput"
+                               disabled="@isLoading" />
+
+                        <span class="search-icon"><i class="fas fa-search"></i></span>
+
+                    </div>
+
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="product-table">
+
+                    <thead>
+
+                        <tr>
+
+                            <th>Code</th>
+
+                            <th>Brand Name</th>
+
+                            <th>Description</th>
+
+                            <th>Actions</th>
+
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                        @if (PaginatedBrands.Any())
+
+                        {
+
+                            @foreach (var brand in PaginatedBrands)
+
+                            {
+
+                                <tr>
+
+                                    <td><strong>@(brand.brand_code ?? "N/A")</strong></td>
+
+                                    <td>@brand.brand_name</td>
+
+                                    <td>
+
+                                        @if (!string.IsNullOrEmpty(brand.description))
+
+                                        {
+
+                                            <span>@brand.description</span>
+
+                                        }
+
+                                        else
+
+                                        {
+
+                                            <span style="color: #9ca3af; font-style: italic;">No description</span>
+
+                                        }
+
+                                    </td>
+
+                                    <td>
+
+                                        <button class="edit-btn"
+                                                @onclick="() => ShowEditModal(brand)"
+                                                disabled="@isLoading">
+                                            <i class="fas fa-edit"></i>
+                                            <span>Edit</span>
+                                        </button>
+
+                                    </td>
+
+                                </tr>
+
+                            }
+
+                        }
+
+                        else if (!isLoading)
+
+                        {
+
+                            <tr>
+
+                                <td colspan="4" class="empty-state-cell">
+                                    <div class="empty-state">
+                                        <i class="fas fa-tag empty-state-icon"></i>
+                                        @if (string.IsNullOrWhiteSpace(searchQuery))
+                                        {
+                                            <p class="empty-state-text">No brands found. Click "Add Brand" to add your first brand.</p>
+                                        }
+                                        else
+                                        {
+                                            <p class="empty-state-text">No brands match your search criteria.</p>
+                                        }
+                                    </div>
+                                </td>
+
+                            </tr>
+
+                        }
+
+                    </tbody>
+
+                    </table>
+                </div>
+
+                <!-- Mobile Card View -->
+                <div class="brand-cards-container">
+                    @if (PaginatedBrands.Any())
+                    {
+                        @foreach (var brand in PaginatedBrands)
+                        {
+                            <div class="brand-card">
+                                <div class="brand-card-header">
+                                    <div>
+                                        <h3 class="brand-card-title">@brand.brand_name</h3>
+                                        <span class="brand-card-code">@(brand.brand_code ?? "N/A")</span>
+                                    </div>
+                                    <button class="edit-btn" @onclick="() => ShowEditModal(brand)" disabled="@isLoading">
+                                        <i class="fas fa-edit"></i>
+                                        <span>Edit</span>
+                                    </button>
+                                </div>
+                                <div class="brand-card-body">
+                                    <div class="brand-info-group">
+                                        <span class="brand-info-label">Description</span>
+                                        <span class="brand-info-value">
+                                            @if (!string.IsNullOrEmpty(brand.description))
+                                            {
+                                                @brand.description
+                                            }
+                                            else
+                                            {
+                                                <span style="color: #9ca3af; font-style: italic;">No description</span>
+                                            }
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (!isLoading)
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-tag empty-state-icon"></i>
+                            @if (string.IsNullOrWhiteSpace(searchQuery))
+                            {
+                                <p class="empty-state-text">No brands found. Click "Add Brand" to add your first brand.</p>
+                            }
+                            else
+                            {
+                                <p class="empty-state-text">No brands match your search criteria.</p>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Pagination -->
+                @if (FilteredBrands.Any())
+
+                {
+
+                    <Pagination CurrentPage="@currentPage"
+                                PageSize="@pageSize"
+                                TotalItems="@FilteredBrands.Count()"
+                                PageChanged="@OnPageChanged"
+                                PageSizeChanged="@OnPageSizeChanged" />
+
+                }
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- Add Brand Modal -->
+@if (showAddModal)
+
+{
+
+    <div class="brand-modal-overlay">
+
+        <div class="brand-modal-content" @onclick:stopPropagation="true">
+
+            <div class="brand-modal-header">
+
+                <h3>Add New Brand</h3>
+
+                <button class="modal-close" @onclick="ShowCancelAddModal"><i class="fas fa-times"></i></button>
+
+            </div>
+
+            <div class="brand-modal-body">
+
+                <!-- Validation Summary - Only show after submit attempt -->
+
+                <div class="brand-form-container">
+
+                    <div class="brand-form-group">
+
+                        <label>Brand Code</label>
+
+                        <input type="text"
+                               class="brand-form-control @(hasAttemptedSubmit && HasError("BrandCode") ? "input-error" : "")"
+                               @bind="newBrandCode"
+                               @bind:event="oninput"
+                               placeholder="Auto-generated if left empty (max 3 chars)"
+                               maxlength="10"
+                               style="text-transform: uppercase;"
+                               disabled="@isLoading" />
+
+                        <small style="color: #6b7280; font-size: 0.875rem;">Leave empty to auto-generate from name</small>
+
+                        @if (hasAttemptedSubmit && HasError("BrandCode"))
+
+                        {
+
+                            <span class="brand-field-error">@GetError("BrandCode")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="brand-form-group">
+
+                        <label>Brand Name *</label>
+
+                        <input type="text"
+                               class="brand-form-control @(hasAttemptedSubmit && HasError("BrandName") ? "input-error" : "")"
+                               @bind="newBrandName"
+                               placeholder="Enter brand name"
+                               maxlength="100"
+                               disabled="@isLoading" />
+
+                        @if (hasAttemptedSubmit && HasError("BrandName"))
+
+                        {
+
+                            <span class="brand-field-error">@GetError("BrandName")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="brand-form-group">
+
+                        <label>Description</label>
+
+                        <textarea class="brand-form-control brand-textarea"
+                                  @bind="newDescription"
+                                  placeholder="Enter brand description (optional)"
+                                  maxlength="500"
+                                  rows="4"
+                                  disabled="@isLoading"></textarea>
+
+                        <div class="character-count">
+
+                            @newDescription.Length/500 characters
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="brand-modal-footer">
+
+                <button class="brand-btn-cancel" @onclick="ShowCancelAddModal" disabled="@isLoading">Cancel</button>
+
+                <button class="brand-btn-submit" @onclick="ShowAddBrandConfirmation" disabled="@isLoading">
+
+                    @if (isLoading)
+
+                    {
+
+                        <span class="button-spinner"></span>
+
+                    }
+
+                    Add Brand
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+}
+
+<!-- Edit Brand Modal -->
+@if (showEditModal && editingBrand != null)
+
+{
+
+    <div class="brand-modal-overlay">
+
+        <div class="brand-modal-content" @onclick:stopPropagation="true">
+
+            <div class="brand-modal-header">
+
+                <h3>Edit Brand</h3>
+
+                <button class="modal-close" @onclick="ShowCancelEditModal"><i class="fas fa-times"></i></button>
+
+            </div>
+
+            <div class="brand-modal-body">
+
+
+                <div class="brand-form-container">
+
+                    <div class="brand-form-group">
+
+                        <label>Brand Code</label>
+
+                        <input type="text"
+                               class="brand-form-control @(hasAttemptedEditSubmit && HasEditError("BrandCode") ? "input-error" : "")"
+                               @bind="editBrandCode"
+                               @bind:event="oninput"
+                               placeholder="Brand code (max 10 chars)"
+                               maxlength="10"
+                               style="text-transform: uppercase;"
+                               disabled="@isLoading" />
+
+                        @if (hasAttemptedEditSubmit && HasEditError("BrandCode"))
+
+                        {
+
+                            <span class="brand-field-error">@GetEditError("BrandCode")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="brand-form-group">
+
+                        <label>Brand Name *</label>
+
+                        <input type="text"
+                               class="brand-form-control @(hasAttemptedEditSubmit && HasEditError("BrandName") ? "input-error" : "")"
+                               @bind="editBrandName"
+                               placeholder="Enter brand name"
+                               maxlength="100"
+                               disabled="@isLoading" />
+
+                        @if (hasAttemptedEditSubmit && HasEditError("BrandName"))
+
+                        {
+
+                            <span class="brand-field-error">@GetEditError("BrandName")</span>
+
+                        }
+
+                    </div>
+
+                    <div class="brand-form-group">
+
+                        <label>Description</label>
+
+                        <textarea class="brand-form-control brand-textarea"
+                                  @bind="editDescription"
+                                  placeholder="Enter brand description (optional)"
+                                  maxlength="500"
+                                  rows="4"
+                                  disabled="@isLoading"></textarea>
+
+                        <div class="character-count">
+
+                            @editDescription.Length/500 characters
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="brand-modal-footer">
+
+                <button class="brand-btn-cancel" @onclick="ShowCancelEditModal" disabled="@isLoading">Cancel</button>
+
+                <button class="brand-btn-submit" @onclick="ShowUpdateBrandConfirmation" disabled="@isLoading">
+
+                    @if (isLoading)
+
+                    {
+
+                        <span class="button-spinner"></span>
+
+                    }
+
+                    Update Brand
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+}
+
+<!-- Confirmation Modal for Add Brand -->
+@if (showAddBrandConfirmation)
+{
+    <div class="modal-overlay confirmation-modal-overlay">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header confirmation-modal-header">
+                <h3>Confirm Add Brand</h3>
+                <button class="modal-close" @onclick="CloseAddBrandConfirmation"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body confirmation-modal-body">
+                <div class="confirmation-message-box">
+                    <p class="confirmation-question">Are you sure you want to add this brand?</p>
+                </div>
+                <div class="confirmation-details">
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Brand Code:</span>
+                        <span class="confirmation-value code-value">@(string.IsNullOrWhiteSpace(newBrandCode) ? "N/A" : newBrandCode.ToUpper())</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Brand Name:</span>
+                        <span class="confirmation-value">@newBrandName</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Description:</span>
+                        <span class="confirmation-value">@(string.IsNullOrWhiteSpace(newDescription) ? "N/A" : newDescription)</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer confirmation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseAddBrandConfirmation">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmAddBrand">Confirm Add</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Confirmation Modal for Update Brand -->
+@if (showUpdateBrandConfirmation)
+{
+    <div class="modal-overlay" style="z-index: 3000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: white; border-radius: 12px; padding: 0; max-width: 500px; width: 90%;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Confirm Update Brand</h3>
+                <button class="modal-close" @onclick="CloseUpdateBrandConfirmation"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning" style="margin-bottom: 20px;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Are you sure you want to update this brand?</span>
+                </div>
+                <div style="padding: 15px; background-color: #f9fafb; border-radius: 8px; margin-bottom: 15px;">
+                    <p><strong>Brand Code:</strong> @(string.IsNullOrWhiteSpace(editBrandCode) ? "N/A" : editBrandCode.ToUpper())</p>
+                    <p><strong>Brand Name:</strong> @editBrandName</p>
+                    <p><strong>Description:</strong> @(string.IsNullOrWhiteSpace(editDescription) ? "N/A" : editDescription)</p>
+                </div>
+                <p style="color: #6b7280; font-size: 0.875rem;">This action will permanently update the brand information.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="CloseUpdateBrandConfirmation">Cancel</button>
+                <button class="btn-submit" @onclick="ConfirmUpdateBrand">Confirm Update</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Add Brand -->
+@if (showCancelAddModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Add Brand?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelAddModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelAddModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelAddModal">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Edit Brand -->
+@if (showCancelEditModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Edit Brand?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelEditModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelEditModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelEditModal">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Success Modal -->
+@if (showSuccessModal)
+{
+    <div class="modal-overlay success-modal-overlay">
+        <div class="modal-content success-modal" @onclick:stopPropagation="true">
+            <div class="modal-header success-modal-header">
+                <h3>
+                    <i class="fas fa-check-circle"></i>
+                    Success!
+                </h3>
+                <button class="modal-close" @onclick="CloseSuccessModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body success-modal-body">
+                <div class="success-icon-container">
+                    <i class="fas fa-check-circle success-icon"></i>
+                </div>
+                <p class="success-message">@successModalMessage</p>
+            </div>
+            <div class="modal-footer success-modal-footer">
+                <button class="btn-submit" @onclick="CloseSuccessModal">OK</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+
+    private string searchQuery = "";
+
+    private List<MauiApp2.Models.Brand> brands = new();
+
+    private bool showAddModal = false;
+
+    private bool showEditModal = false;
+
+    private bool showAddBrandConfirmation = false;
+
+    private bool showUpdateBrandConfirmation = false;
+
+    private bool showCancelAddModal = false;
+
+    private bool showCancelEditModal = false;
+
+    private bool showSuccessModal = false;
+
+    private string successModalMessage = "";
+
+    private MauiApp2.Models.Brand? editingBrand = null;
+
+    private bool isLoading = false;
+
+    // Track submit attempts for validation display
+
+    private bool hasAttemptedSubmit = false;
+
+    private bool hasAttemptedEditSubmit = false;
+
+    // Add form fields
+
+    private string newBrandCode = "";
+
+    private string newBrandName = "";
+
+    private string newDescription = "";
+
+    // Edit form fields
+
+    private string editBrandCode = "";
+
+    private string editBrandName = "";
+
+    private string editDescription = "";
+
+    // Messages and validation
+
+    private string errorMessage = "";
+
+    private string successMessage = "";
+
+    private List<string> validationErrors = new List<string>();
+
+    private List<string> editValidationErrors = new List<string>();
+
+    // Pagination
+
+    private int currentPage = 1;
+
+    private int pageSize = 10;
+
+    protected override async Task OnInitializedAsync()
+
+    {
+
+        await LoadBrands();
+
+    }
+
+    private async Task LoadBrands()
+
+    {
+
+        try
+
+        {
+
+            isLoading = true;
+
+            errorMessage = "";
+
+            StateHasChanged();
+
+            var loadedBrands = await BrandService.GetBrandsAsync();
+            if (loadedBrands == null)
+            {
+                brands = new List<MauiApp2.Models.Brand>();
+            }
+            else
+            {
+                // Sort by brand_id in ascending order
+                brands = loadedBrands.OrderBy(b => b.brand_id).ToList();
+            }
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error loading brands: {ex.Message}";
+
+            Console.WriteLine($"Error: {ex.Message}");
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+    private IEnumerable<MauiApp2.Models.Brand> FilteredBrands
+
+    {
+
+        get
+
+        {
+
+            IEnumerable<MauiApp2.Models.Brand> result;
+            if (string.IsNullOrWhiteSpace(searchQuery))
+                result = brands;
+            else
+                result = brands.Where(b =>
+
+                    b.brand_name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+
+                    (b.brand_code != null && b.brand_code.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+
+                    (b.description != null && b.description.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+
+                    b.brand_id.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+
+            // Sort by brand_id in ascending order
+            return result.OrderBy(b => b.brand_id);
+
+        }
+
+    }
+
+    private IEnumerable<MauiApp2.Models.Brand> PaginatedBrands
+
+    {
+
+        get
+
+        {
+
+            var filtered = FilteredBrands.ToList();
+
+            return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
+
+        }
+
+    }
+
+    private void OnPageChanged(int page)
+
+    {
+
+        currentPage = page;
+
+        StateHasChanged();
+
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+
+    {
+
+        pageSize = newPageSize;
+
+        currentPage = 1;
+
+        StateHasChanged();
+
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+
+    {
+
+        searchQuery = e.Value?.ToString() ?? "";
+
+        currentPage = 1;
+
+    }
+
+    // Modal Methods
+
+    private void ShowAddModal()
+
+    {
+
+        showAddModal = true;
+
+        hasAttemptedSubmit = false; // Reset submit attempt flag
+
+        ClearMessages();
+
+        ResetAddForm();
+
+        StateHasChanged();
+
+    }
+
+    private void ShowCancelAddModal()
+    {
+        showCancelAddModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseCancelAddModal()
+    {
+        showCancelAddModal = false;
+        StateHasChanged();
+    }
+
+    private void ConfirmCancelAddModal()
+    {
+        showCancelAddModal = false;
+        CloseAddModal();
+    }
+
+    private void CloseAddModal()
+
+    {
+
+        showAddModal = false;
+
+        hasAttemptedSubmit = false; // Reset submit attempt flag
+
+        ResetAddForm();
+
+        StateHasChanged();
+
+    }
+
+    private void ShowEditModal(MauiApp2.Models.Brand brand)
+
+    {
+
+        editingBrand = brand;
+
+        showEditModal = true;
+
+        hasAttemptedEditSubmit = false; // Reset submit attempt flag
+
+        ClearMessages();
+
+        // Populate edit form
+
+        editBrandCode = brand.brand_code ?? "";
+
+        editBrandName = brand.brand_name;
+
+        editDescription = brand.description ?? "";
+
+        StateHasChanged();
+
+    }
+
+    private void ShowCancelEditModal()
+    {
+        showCancelEditModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseCancelEditModal()
+    {
+        showCancelEditModal = false;
+        StateHasChanged();
+    }
+
+    private void ConfirmCancelEditModal()
+    {
+        showCancelEditModal = false;
+        CloseEditModal();
+    }
+
+    private void CloseEditModal()
+
+    {
+
+        showEditModal = false;
+
+        editingBrand = null;
+
+        hasAttemptedEditSubmit = false; // Reset submit attempt flag
+
+        ResetEditForm();
+
+        StateHasChanged();
+
+    }
+
+    private void CloseSuccessModal()
+    {
+        showSuccessModal = false;
+        successModalMessage = "";
+        StateHasChanged();
+    }
+
+    // Form Methods
+
+    private void ResetAddForm()
+
+    {
+
+        newBrandCode = "";
+
+        newBrandName = "";
+
+        newDescription = "";
+
+        validationErrors.Clear();
+
+        hasAttemptedSubmit = false;
+
+    }
+
+    private void ResetEditForm()
+
+    {
+
+        editBrandCode = "";
+
+        editBrandName = "";
+
+        editDescription = "";
+
+        editValidationErrors.Clear();
+
+        hasAttemptedEditSubmit = false;
+
+    }
+
+    private void ClearMessages()
+
+    {
+
+        errorMessage = "";
+
+        successMessage = "";
+
+        validationErrors.Clear();
+
+        editValidationErrors.Clear();
+
+    }
+
+    private void ClearErrorMessage() => errorMessage = "";
+
+    private void ClearSuccessMessage() => successMessage = "";
+
+    // Validation Methods
+
+    private void ValidateAddForm()
+
+    {
+
+        validationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(newBrandName))
+
+            AddValidationError("BrandName", "Brand name is required");
+
+        else if (newBrandName.Trim().Length < 2)
+
+            AddValidationError("BrandName", "Brand name must be at least 2 characters long");
+
+        else if (brands.Any(b => b.brand_name.Equals(newBrandName.Trim(), StringComparison.OrdinalIgnoreCase)))
+
+            AddValidationError("BrandName", "Brand name already exists");
+
+        // Validate code if provided
+
+        if (!string.IsNullOrWhiteSpace(newBrandCode))
+
+        {
+
+            var code = newBrandCode.Trim().ToUpper();
+
+            if (code.Length > 10)
+
+            {
+
+                AddValidationError("BrandCode", "Brand code must be 10 characters or less");
+
+            }
+
+            else if (brands.Any(b => b.brand_code != null && b.brand_code.Equals(code, StringComparison.OrdinalIgnoreCase)))
+
+            {
+
+                AddValidationError("BrandCode", "Brand code already exists");
+
+            }
+
+        }
+
+    }
+
+    private void ValidateEditForm()
+
+    {
+
+        editValidationErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(editBrandName))
+
+            AddEditValidationError("BrandName", "Brand name is required");
+
+        else if (editBrandName.Trim().Length < 2)
+
+            AddEditValidationError("BrandName", "Brand name must be at least 2 characters long");
+
+        else if (brands.Any(b => b.brand_name.Equals(editBrandName.Trim(), StringComparison.OrdinalIgnoreCase) && b.brand_id != editingBrand?.brand_id))
+
+            AddEditValidationError("BrandName", "Brand name already exists");
+
+        // Validate code if provided
+
+        if (!string.IsNullOrWhiteSpace(editBrandCode))
+
+        {
+
+            var code = editBrandCode.Trim().ToUpper();
+
+            if (code.Length > 10)
+
+            {
+
+                AddEditValidationError("BrandCode", "Brand code must be 10 characters or less");
+
+            }
+
+            else if (brands.Any(b => b.brand_code != null && b.brand_code.Equals(code, StringComparison.OrdinalIgnoreCase) && b.brand_id != editingBrand?.brand_id))
+
+            {
+
+                AddEditValidationError("BrandCode", "Brand code already exists");
+
+            }
+
+        }
+
+    }
+
+    private void AddValidationError(string field, string message)
+
+    {
+
+        validationErrors.Add($"{field}: {message}");
+
+    }
+
+    private void AddEditValidationError(string field, string message)
+
+    {
+
+        editValidationErrors.Add($"{field}: {message}");
+
+    }
+
+    private bool HasError(string field)
+
+    {
+
+        return validationErrors.Any(error => error.StartsWith($"{field}:"));
+
+    }
+
+    private bool HasEditError(string field)
+
+    {
+
+        return editValidationErrors.Any(error => error.StartsWith($"{field}:"));
+
+    }
+
+    private string GetError(string field)
+
+    {
+
+        return validationErrors.FirstOrDefault(error => error.StartsWith($"{field}:"))?.Split(':')[1]?.Trim() ?? "";
+
+    }
+
+    private string GetEditError(string field)
+
+    {
+
+        return editValidationErrors.FirstOrDefault(error => error.StartsWith($"{field}:"))?.Split(':')[1]?.Trim() ?? "";
+
+    }
+
+    private bool IsFormValid
+
+    {
+
+        get
+
+        {
+
+            // Only validate if user has attempted to submit
+
+            if (!hasAttemptedSubmit)
+
+                return true;
+
+            ValidateAddForm();
+
+            return validationErrors.Count == 0 && !string.IsNullOrWhiteSpace(newBrandName);
+
+        }
+
+    }
+
+    private bool IsEditFormValid
+
+    {
+
+        get
+
+        {
+
+            // Only validate if user has attempted to submit
+
+            if (!hasAttemptedEditSubmit)
+
+                return true;
+
+            ValidateEditForm();
+
+            return editValidationErrors.Count == 0 && !string.IsNullOrWhiteSpace(editBrandName);
+
+        }
+
+    }
+
+    // Confirmation Modal Methods
+    private void ShowAddBrandConfirmation()
+    {
+        hasAttemptedSubmit = true;
+        errorMessage = "";
+        validationErrors.Clear();
+        StateHasChanged();
+
+        ValidateAddForm();
+
+        if (validationErrors.Any())
+        {
+            errorMessage = "Please fix the validation errors before submitting.";
+            StateHasChanged();
+            return;
+        }
+
+        showAddBrandConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseAddBrandConfirmation()
+    {
+        showAddBrandConfirmation = false;
+        StateHasChanged();
+    }
+
+    private void ShowUpdateBrandConfirmation()
+    {
+        hasAttemptedEditSubmit = true;
+        errorMessage = "";
+        editValidationErrors.Clear();
+        StateHasChanged();
+
+        ValidateEditForm();
+
+        if (editValidationErrors.Any())
+        {
+            errorMessage = "Please fix the validation errors before submitting.";
+            StateHasChanged();
+            return;
+        }
+
+        if (editingBrand == null)
+        {
+            errorMessage = "Error: No brand selected for editing.";
+            StateHasChanged();
+            return;
+        }
+
+        showUpdateBrandConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CloseUpdateBrandConfirmation()
+    {
+        showUpdateBrandConfirmation = false;
+        StateHasChanged();
+    }
+
+    // CRUD Operations
+
+    private async Task ConfirmAddBrand()
+    {
+        Console.WriteLine("ConfirmAddBrand called");
+        showAddBrandConfirmation = false;
+        StateHasChanged();
+        await AddBrand();
+    }
+
+    private async Task AddBrand()
+
+    {
+
+        try
+
+        {
+
+            isLoading = true;
+
+            StateHasChanged();
+
+            var newBrand = new MauiApp2.Models.Brand
+
+            {
+
+                brand_code = string.IsNullOrWhiteSpace(newBrandCode) ? null : newBrandCode.Trim().ToUpper(),
+
+                brand_name = newBrandName.Trim(),
+
+                description = string.IsNullOrWhiteSpace(newDescription) ? null : newDescription.Trim()
+
+            };
+
+            var brandId = await BrandService.CreateBrandAsync(newBrand);
+
+            // Refresh the list
+            await LoadBrands();
+
+            // Close modal
+            CloseAddModal();
+            CloseAddBrandConfirmation();
+
+            await Task.Delay(100);
+
+            // Show success modal
+            successModalMessage = $"Brand '{newBrandName}' added successfully!";
+            showSuccessModal = true;
+            StateHasChanged();
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error adding brand: {ex.Message}";
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+    private async Task ConfirmUpdateBrand()
+    {
+        showUpdateBrandConfirmation = false;
+        await UpdateBrand();
+    }
+
+    private async Task UpdateBrand()
+
+    {
+
+        try
+
+        {
+
+            isLoading = true;
+
+            StateHasChanged();
+
+            var updatedBrand = new MauiApp2.Models.Brand
+
+            {
+
+                brand_id = editingBrand.brand_id,
+
+                brand_code = string.IsNullOrWhiteSpace(editBrandCode) ? null : editBrandCode.Trim().ToUpper(),
+
+                brand_name = editBrandName.Trim(),
+
+                description = string.IsNullOrWhiteSpace(editDescription) ? null : editDescription.Trim()
+
+            };
+
+            var success = await BrandService.UpdateBrandAsync(updatedBrand);
+
+            if (success)
+
+            {
+
+                // Refresh the list
+                await LoadBrands();
+
+                // Close modal
+                CloseEditModal();
+                CloseUpdateBrandConfirmation();
+
+                await Task.Delay(100);
+
+                // Show success modal
+                successModalMessage = $"Brand '{editBrandName}' updated successfully!";
+                showSuccessModal = true;
+                StateHasChanged();
+
+            }
+
+            else
+
+            {
+
+                errorMessage = "Failed to update brand. Please try again.";
+
+            }
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error updating brand: {ex.Message}";
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+    private async Task DeleteBrand(int brandId)
+
+    {
+
+        var brandToDelete = brands.FirstOrDefault(b => b.brand_id == brandId);
+
+        if (brandToDelete == null) return;
+
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to delete brand '{brandToDelete.brand_name}'?"))
+
+            return;
+
+        try
+
+        {
+
+            isLoading = true;
+
+            StateHasChanged();
+
+            var success = await BrandService.DeleteBrandAsync(brandId);
+
+            if (success)
+
+            {
+
+                successMessage = $"Brand '{brandToDelete.brand_name}' deleted successfully!";
+
+                await LoadBrands(); // Refresh the list
+
+            }
+
+            else
+
+            {
+
+                errorMessage = "Failed to delete brand. Please try again.";
+
+            }
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            errorMessage = $"Error deleting brand: {ex.Message}";
+
+        }
+
+        finally
+
+        {
+
+            isLoading = false;
+
+            StateHasChanged();
+
+        }
+
+    }
+
+}
+

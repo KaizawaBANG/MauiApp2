@@ -1,0 +1,607 @@
+@page "/expenses"
+@layout MainLayout
+@using MauiApp2.Services
+@using MauiApp2.Models
+@using System.Linq
+@inject IAuthService AuthService
+@inject IExpenseService ExpenseService
+@inject NavigationManager Navigation
+
+<link href="css/accounting.css" rel="stylesheet" />
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+    <div class="main-content">
+        <div class="content-header">
+            <h1>Expenses</h1>
+        </div>
+
+        <div class="inventory-section">
+            <div class="tab-section">
+                <div class="tabs">
+                    <button class="tab active">Expense List</button>
+                </div>
+            </div>
+
+            <div class="product-table-container">
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                @if (isLoading)
+                {
+                    <div class="loading-indicator">
+                        <div class="spinner"></div>
+                        <span>Loading expenses...</span>
+                    </div>
+                }
+
+                <div class="toolbar">
+                    <button class="add-item-btn" @onclick="ShowAddModal">
+                        <i class="fas fa-plus"></i>
+                        <span>Record Expense</span>
+                    </button>
+
+                    <div class="search-container">
+                        <input type="text"
+                               class="search-input"
+                               placeholder="Search by category, description, or reference number..."
+                               value="@searchQuery"
+                               @oninput="OnSearchInput" />
+                        <span class="search-icon"><i class="fas fa-search"></i></span>
+                    </div>
+                </div>
+
+                @if (expenses != null && expenses.Any())
+                {
+                    <div class="table-wrapper">
+                        <table class="product-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Category</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Payment Method</th>
+                                    <th>Reference</th>
+                                    <th>Created By</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var expense in paginatedExpenses)
+                                {
+                                    <tr>
+                                        <td>@expense.expense_date.ToString("MM/dd/yyyy")</td>
+                                        <td>@expense.category</td>
+                                        <td>@expense.description</td>
+                                        <td><strong>₱@expense.amount.ToString("N2")</strong></td>
+                                        <td>@expense.payment_method</td>
+                                        <td>@(expense.reference_number ?? "-")</td>
+                                        <td>@(expense.created_by_name ?? "Unknown")</td>
+                                        <td>
+                                            <button class="btn-icon" @onclick="() => EditExpense(expense)" title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (filteredExpenses.Any())
+                    {
+                        <Pagination CurrentPage="@currentPage"
+                                    PageSize="@pageSize"
+                                    TotalItems="@filteredExpenses.Count()"
+                                    PageChanged="@OnPageChanged"
+                                    PageSizeChanged="@OnPageSizeChanged" />
+                    }
+
+                    <div class="summary-card">
+                        <h3>Summary</h3>
+                        <div class="summary-grid">
+                            <div class="summary-item">
+                                <span class="summary-label">Total Expenses:</span>
+                                <span class="summary-value">₱@totalExpenses.ToString("N2")</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (!isLoading)
+                {
+                    <div class="empty-state">
+                        <i class="fas fa-receipt empty-state-icon"></i>
+                        <p class="empty-state-text">No expenses recorded. Click "Record Expense" to add one.</p>
+                    </div>
+                }
+
+                <!-- Mobile Card View -->
+                <div class="product-cards-container">
+                    @if (expenses != null && expenses.Any())
+                    {
+                        @foreach (var expense in paginatedExpenses)
+                        {
+                            <div class="product-card">
+                                <div class="product-card-header">
+                                    <h3 class="product-card-title">@expense.category</h3>
+                                    <span class="product-info-value">₱@expense.amount.ToString("N2")</span>
+                                </div>
+                                <div class="product-card-body">
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Date</span>
+                                        <span class="product-info-value">@expense.expense_date.ToString("MM/dd/yyyy")</span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Description</span>
+                                        <span class="product-info-value">@expense.description</span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Payment Method</span>
+                                        <span class="product-info-value">@expense.payment_method</span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Reference</span>
+                                        <span class="product-info-value">@(expense.reference_number ?? "-")</span>
+                                    </div>
+                                    <div class="product-info-group">
+                                        <span class="product-info-label">Created By</span>
+                                        <span class="product-info-value">@(expense.created_by_name ?? "Unknown")</span>
+                                    </div>
+                                </div>
+                                <div class="product-card-footer">
+                                    <button class="btn-icon" @onclick="() => EditExpense(expense)" title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                        <span>Edit</span>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (!isLoading)
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-receipt empty-state-icon"></i>
+                            <p class="empty-state-text">No expenses recorded. Click "Record Expense" to add one.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+@if (showModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@(editingExpense != null ? "Edit Expense" : "Record Expense")</h3>
+                <button class="modal-close" @onclick="@(editingExpense != null ? ShowCancelEditModal : ShowCancelAddModal)"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Expense Date *</label>
+                    <input type="date" class="form-control" @bind="newExpenseDate" />
+                </div>
+                <div class="form-group">
+                    <label>Category *</label>
+                    <select class="form-control" @bind="newCategory">
+                        <option value="">Select Category</option>
+                        <option value="Rent">Rent</option>
+                        <option value="Utilities">Utilities</option>
+                        <option value="Salaries">Salaries</option>
+                        <option value="Supplies">Supplies</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Description *</label>
+                    <textarea class="form-control" @bind="newDescription" rows="3" placeholder="Describe the expense"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Amount *</label>
+                    <input type="number" class="form-control" @bind="newAmount" step="0.01" min="0.01" />
+                </div>
+                <div class="form-group">
+                    <label>Payment Method *</label>
+                    <select class="form-control" @bind="newPaymentMethod">
+                        <option value="">Select Method</option>
+                        <option value="Cash">Cash</option>
+                        <option value="Card">Card</option>
+                        <option value="GCash">GCash</option>
+                        <option value="PayMaya">PayMaya</option>
+                        <option value="Bank Transfer">Bank Transfer</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Reference Number</label>
+                    <input type="text" class="form-control" @bind="newReferenceNumber" placeholder="Receipt #, Invoice #, etc." />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="@(editingExpense != null ? ShowCancelEditModal : ShowCancelAddModal)">Cancel</button>
+                <button class="btn-submit" @onclick="ShowConfirmModal" disabled="@isSaving">
+                    @(isSaving ? "Saving..." : "Save")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Confirmation Modal -->
+@if (showConfirmModal)
+{
+    <div class="modal-overlay confirmation-modal-overlay">
+        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header confirmation-modal-header">
+                <h3>@(editingExpense != null ? "Confirm Update Expense" : "Confirm Record Expense")</h3>
+                <button class="modal-close" @onclick="CloseConfirmModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body confirmation-modal-body">
+                <div class="confirmation-message-box">
+                    <p class="confirmation-question">Are you sure you want to @(editingExpense != null ? "update" : "record") this expense?</p>
+                </div>
+                <div class="confirmation-details">
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Expense Date:</span>
+                        <span class="confirmation-value">@newExpenseDate.ToString("MM/dd/yyyy")</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Category:</span>
+                        <span class="confirmation-value">@newCategory</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Description:</span>
+                        <span class="confirmation-value">@newDescription</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Amount:</span>
+                        <span class="confirmation-value price-value">₱@newAmount.ToString("N2")</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Payment Method:</span>
+                        <span class="confirmation-value">@newPaymentMethod</span>
+                    </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Reference Number:</span>
+                        <span class="confirmation-value">@(string.IsNullOrWhiteSpace(newReferenceNumber) ? "-" : newReferenceNumber)</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer confirmation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseConfirmModal">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="SaveExpense" disabled="@isSaving">
+                    @(isSaving ? "Saving..." : "Confirm")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Add -->
+@if (showCancelAddModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Record Expense?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelAddModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelAddModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelAdd">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancellation Modal for Edit -->
+@if (showCancelEditModal)
+{
+    <div class="modal-overlay cancellation-modal-overlay">
+        <div class="modal-content cancellation-modal" @onclick:stopPropagation="true">
+            <div class="modal-header cancellation-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Cancel Edit Expense?
+                </h3>
+                <button class="modal-close" @onclick="CloseCancelEditModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body cancellation-modal-body">
+                <div class="cancellation-icon-container">
+                    <i class="fas fa-question-circle cancellation-icon"></i>
+                </div>
+                <p class="cancellation-message">Are you sure you want to cancel? All unsaved changes will be lost.</p>
+            </div>
+            <div class="modal-footer cancellation-modal-footer">
+                <button class="btn-cancel" @onclick="CloseCancelEditModal">No, Continue Editing</button>
+                <button class="btn-submit cancellation-btn" @onclick="ConfirmCancelEdit">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Success Modal -->
+@if (showSuccessModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-content modal-success" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Success!</h3>
+                <button class="modal-close" @onclick="CloseSuccessModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="success-icon">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <p>@successMessage</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-submit" @onclick="CloseSuccessModal">OK</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Expense>? expenses;
+    private Expense? editingExpense;
+    private bool isLoading = true;
+    private bool showModal = false;
+    private bool showConfirmModal = false;
+    private bool showCancelAddModal = false;
+    private bool showCancelEditModal = false;
+    private bool showSuccessModal = false;
+    private bool isSaving = false;
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private string searchQuery = string.Empty;
+
+    private DateTime newExpenseDate = DateTime.Today;
+    private string newCategory = string.Empty;
+    private string newDescription = string.Empty;
+    private decimal newAmount = 0;
+    private string newPaymentMethod = string.Empty;
+    private string? newReferenceNumber = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadExpenses();
+    }
+
+    private async Task LoadExpenses()
+    {
+        try
+        {
+            isLoading = true;
+            currentPage = 1; // Reset to first page when data is reloaded
+            expenses = await ExpenseService.GetExpensesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading expenses: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private IEnumerable<Expense> filteredExpenses
+    {
+        get
+        {
+            IEnumerable<Expense> filtered = expenses ?? new List<Expense>();
+            
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                filtered = filtered.Where(e =>
+                    e.category.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    e.description.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    (e.reference_number != null && e.reference_number.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                );
+            }
+            
+            return filtered.OrderBy(e => e.expense_id);
+        }
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+
+    private IEnumerable<Expense> paginatedExpenses => filteredExpenses
+        .Skip((currentPage - 1) * pageSize)
+        .Take(pageSize);
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void OnPageSizeChanged(int newPageSize)
+    {
+        pageSize = newPageSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private decimal totalExpenses => filteredExpenses.Sum(e => e.amount);
+
+    private void ShowAddModal()
+    {
+        editingExpense = null;
+        newExpenseDate = DateTime.Today;
+        newCategory = string.Empty;
+        newDescription = string.Empty;
+        newAmount = 0;
+        newPaymentMethod = string.Empty;
+        newReferenceNumber = string.Empty;
+        showModal = true;
+    }
+
+    private void EditExpense(Expense expense)
+    {
+        editingExpense = expense;
+        newExpenseDate = expense.expense_date;
+        newCategory = expense.category;
+        newDescription = expense.description;
+        newAmount = expense.amount;
+        newPaymentMethod = expense.payment_method;
+        newReferenceNumber = expense.reference_number;
+        showModal = true;
+    }
+
+    private void ShowConfirmModal()
+    {
+        if (string.IsNullOrWhiteSpace(newCategory) || 
+            string.IsNullOrWhiteSpace(newDescription) || 
+            newAmount <= 0 ||
+            string.IsNullOrWhiteSpace(newPaymentMethod))
+        {
+            errorMessage = "Please fill in all required fields.";
+            return;
+        }
+        showConfirmModal = true;
+    }
+
+    private void CloseConfirmModal()
+    {
+        showConfirmModal = false;
+    }
+
+    private void ShowCancelAddModal()
+    {
+        showCancelAddModal = true;
+    }
+
+    private void CloseCancelAddModal()
+    {
+        showCancelAddModal = false;
+    }
+
+    private void ConfirmCancelAdd()
+    {
+        showCancelAddModal = false;
+        CloseModal();
+    }
+
+    private void ShowCancelEditModal()
+    {
+        showCancelEditModal = true;
+    }
+
+    private void CloseCancelEditModal()
+    {
+        showCancelEditModal = false;
+    }
+
+    private void ConfirmCancelEdit()
+    {
+        showCancelEditModal = false;
+        CloseModal();
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        editingExpense = null;
+        newExpenseDate = DateTime.Today;
+        newCategory = string.Empty;
+        newDescription = string.Empty;
+        newAmount = 0;
+        newPaymentMethod = string.Empty;
+        newReferenceNumber = string.Empty;
+    }
+
+    private async Task SaveExpense()
+    {
+        try
+        {
+            isSaving = true;
+            ClearMessages();
+            CloseConfirmModal();
+
+            var expense = new Expense
+            {
+                expense_date = newExpenseDate,
+                category = newCategory.Trim(),
+                description = newDescription.Trim(),
+                amount = newAmount,
+                payment_method = newPaymentMethod,
+                reference_number = string.IsNullOrWhiteSpace(newReferenceNumber) ? null : newReferenceNumber.Trim(),
+                created_by = AuthService.CurrentUserId
+            };
+
+            if (editingExpense != null)
+            {
+                expense.expense_id = editingExpense.expense_id;
+                await ExpenseService.UpdateExpenseAsync(expense);
+                successMessage = "Expense updated successfully!";
+            }
+            else
+            {
+                await ExpenseService.CreateExpenseAsync(expense);
+                successMessage = "Expense recorded successfully!";
+            }
+
+            await LoadExpenses();
+            CloseModal();
+            
+            await Task.Delay(100);
+            showSuccessModal = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error saving expense: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseSuccessModal()
+    {
+        showSuccessModal = false;
+        successMessage = string.Empty;
+    }
+
+    private void ClearError() => errorMessage = string.Empty;
+    private void ClearMessages()
+    {
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+    }
+}
+
