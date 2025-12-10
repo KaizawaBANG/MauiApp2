@@ -18,6 +18,15 @@ namespace MauiApp2.Services
 
     public class SupplierService : ISupplierService
     {
+        private readonly IAuditLogService? _auditLogService;
+        private readonly IAuthService? _authService;
+
+        public SupplierService(IAuditLogService? auditLogService = null, IAuthService? authService = null)
+        {
+            _auditLogService = auditLogService;
+            _authService = authService;
+        }
+
         // READ - Get all suppliers
         public async Task<List<Supplier>> GetSuppliersAsync()
         {
@@ -92,7 +101,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@created_date", supplier.created_date);
 
                 var result = await command.ExecuteScalarAsync();
-                return Convert.ToInt32(result);
+                var supplierId = Convert.ToInt32(result);
+
+                // Log audit action
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Create",
+                        "tbl_supplier",
+                        supplierId,
+                        null,
+                        new { supplier_name = supplier.supplier_name, contact_number = supplier.contact_number, email = supplier.email, is_active = supplier.is_active },
+                        null,
+                        null,
+                        $"added new supplier: {supplier.supplier_name}"
+                    );
+                }
+
+                return supplierId;
             }
             catch (SqlException ex)
             {
@@ -113,6 +140,13 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get old values for audit log
+                Supplier? oldSupplier = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    oldSupplier = await GetSupplierByIdAsync(supplier.supplier_id);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
@@ -132,7 +166,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@is_active", supplier.is_active);
                 command.Parameters.AddWithValue("@modified_date", DateTime.Now);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                var success = await command.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && oldSupplier != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Update",
+                        "tbl_supplier",
+                        supplier.supplier_id,
+                        new { supplier_name = oldSupplier.supplier_name, contact_number = oldSupplier.contact_number, email = oldSupplier.email, is_active = oldSupplier.is_active },
+                        new { supplier_name = supplier.supplier_name, contact_number = supplier.contact_number, email = supplier.email, is_active = supplier.is_active },
+                        null,
+                        null,
+                        $"updated supplier: {supplier.supplier_name}"
+                    );
+                }
+
+                return success;
             }
             catch (SqlException ex)
             {
@@ -153,13 +205,38 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get supplier details for audit log before deletion
+                Supplier? supplierToDelete = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    supplierToDelete = await GetSupplierByIdAsync(supplierId);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
                 var command = new SqlCommand("DELETE FROM tbl_supplier WHERE supplier_id = @supplier_id", connection);
                 command.Parameters.AddWithValue("@supplier_id", supplierId);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                var success = await command.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && supplierToDelete != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Delete",
+                        "tbl_supplier",
+                        supplierId,
+                        new { supplier_name = supplierToDelete.supplier_name, contact_number = supplierToDelete.contact_number, email = supplierToDelete.email, is_active = supplierToDelete.is_active },
+                        null,
+                        null,
+                        null,
+                        $"deleted supplier: {supplierToDelete.supplier_name}"
+                    );
+                }
+
+                return success;
             }
             catch (SqlException ex)
             {

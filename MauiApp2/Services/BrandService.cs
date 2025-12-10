@@ -18,6 +18,15 @@ namespace MauiApp2.Services
 
     public class BrandService : IBrandService
     {
+        private readonly IAuditLogService? _auditLogService;
+        private readonly IAuthService? _authService;
+
+        public BrandService(IAuditLogService? auditLogService = null, IAuthService? authService = null)
+        {
+            _auditLogService = auditLogService;
+            _authService = authService;
+        }
+
         // READ - Get all brands
         public async Task<List<Brand>> GetBrandsAsync()
         {
@@ -90,7 +99,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@description", (object)brand.description ?? DBNull.Value);
 
                 var result = await command.ExecuteScalarAsync();
-                return Convert.ToInt32(result);
+                var brandId = Convert.ToInt32(result);
+
+                // Log audit action
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Create",
+                        "tbl_brand",
+                        brandId,
+                        null,
+                        new { brand_name = brand.brand_name, brand_code = brandCode, description = brand.description },
+                        null,
+                        null,
+                        $"added new brand: {brand.brand_name}"
+                    );
+                }
+
+                return brandId;
             }
             catch (SqlException ex)
             {
@@ -107,6 +134,13 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get old values for audit log
+                Brand? oldBrand = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    oldBrand = await GetBrandByIdAsync(brand.brand_id);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
@@ -130,7 +164,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@brand_code", brandCode);
                 command.Parameters.AddWithValue("@description", (object)brand.description ?? DBNull.Value);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                var success = await command.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && oldBrand != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Update",
+                        "tbl_brand",
+                        brand.brand_id,
+                        new { brand_name = oldBrand.brand_name, brand_code = oldBrand.brand_code, description = oldBrand.description },
+                        new { brand_name = brand.brand_name, brand_code = brandCode, description = brand.description },
+                        null,
+                        null,
+                        $"updated brand: {brand.brand_name}"
+                    );
+                }
+
+                return success;
             }
             catch (Exception ex)
             {
@@ -143,13 +195,38 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get brand details for audit log before deletion
+                Brand? brandToDelete = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    brandToDelete = await GetBrandByIdAsync(brandId);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
                 var command = new SqlCommand("DELETE FROM tbl_brand WHERE brand_id = @brand_id", connection);
                 command.Parameters.AddWithValue("@brand_id", brandId);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                var success = await command.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && brandToDelete != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Delete",
+                        "tbl_brand",
+                        brandId,
+                        new { brand_name = brandToDelete.brand_name, brand_code = brandToDelete.brand_code, description = brandToDelete.description },
+                        null,
+                        null,
+                        null,
+                        $"deleted brand: {brandToDelete.brand_name}"
+                    );
+                }
+
+                return success;
             }
             catch (Exception ex)
             {

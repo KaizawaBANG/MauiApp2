@@ -50,6 +50,7 @@
                             <th>Subtotal</th>
                             <th>Tax</th>
                             <th>Total Amount</th>
+                            <th>Customer</th>
                             <th>Payment Method</th>
                             <th>Processed By</th>
                             <th>Actions</th>
@@ -72,6 +73,16 @@
                                         <span class="total-amount">₱@sale.total_amount.ToString("N2")</span>
                                     </td>
                                     <td>
+                                        @if (!string.IsNullOrEmpty(sale.customer_name))
+                                        {
+                                            <span class="customer-name">@sale.customer_name</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="no-data">Walk-in Customer</span>
+                                        }
+                                    </td>
+                                    <td>
                                         <span class="payment-badge payment-@sale.payment_method.ToLower().Replace(" ", "-")">
                                             @sale.payment_method
                                         </span>
@@ -90,7 +101,7 @@
                         else
                         {
                             <tr>
-                                <td colspan="9" class="no-data">
+                                <td colspan="10" class="no-data">
                                     <i class="fas fa-receipt no-data-icon"></i>
                                     <div class="no-data-text">
                                         @if (string.IsNullOrWhiteSpace(searchTerm))
@@ -141,8 +152,44 @@
                 }
                 else
                 {
+                    <!-- Customer Information Section -->
+                    @if (!string.IsNullOrEmpty(viewingSale.customer_name) || viewingSale.customer_id.HasValue)
+                    {
+                        <div class="po-details-section">
+                            <h4>Customer Information</h4>
+                            <div class="po-details-grid">
+                                <div class="po-detail-item">
+                                    <label>Customer Name:</label>
+                                    <span>@(viewingSale.customer_name ?? "N/A")</span>
+                                </div>
+                                @if (!string.IsNullOrEmpty(viewingSale.customer_contact))
+                                {
+                                    <div class="po-detail-item">
+                                        <label>Contact Number:</label>
+                                        <span>@viewingSale.customer_contact</span>
+                                    </div>
+                                }
+                                @if (!string.IsNullOrEmpty(viewingSale.customer_email))
+                                {
+                                    <div class="po-detail-item">
+                                        <label>Email:</label>
+                                        <span>@viewingSale.customer_email</span>
+                                    </div>
+                                }
+                                @if (!string.IsNullOrEmpty(viewingSale.customer_address))
+                                {
+                                    <div class="po-detail-item full-width">
+                                        <label>Address:</label>
+                                        <span>@viewingSale.customer_address</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
                     <!-- Sale Information Section -->
                     <div class="po-details-section">
+                        <h4>Sale Information</h4>
                         <div class="po-details-grid">
                             <div class="po-detail-item">
                                 <label>Invoice Number:</label>

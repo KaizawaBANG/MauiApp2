@@ -20,6 +20,15 @@ namespace MauiApp2.Services
 
     public class ProductService : IProductService
     {
+        private readonly IAuditLogService? _auditLogService;
+        private readonly IAuthService? _authService;
+
+        public ProductService(IAuditLogService? auditLogService = null, IAuthService? authService = null)
+        {
+            _auditLogService = auditLogService;
+            _authService = authService;
+        }
+
         // READ - Get all products
         public async Task<List<Product>> GetProductsAsync()
         {
@@ -35,7 +44,7 @@ namespace MauiApp2.Services
                            model_number, cost_price, sell_price, quantity, status, 
                            created_date, modified_date 
                     FROM tbl_product 
-                    ORDER BY product_name", connection);
+                    ORDER BY created_date DESC, product_id DESC", connection);
 
                 using var reader = await command.ExecuteReaderAsync();
                 while (await reader.ReadAsync())
@@ -238,11 +247,28 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@modified_date", product.modified_date ?? DateTime.Now);
 
                 var result = await command.ExecuteScalarAsync();
+                int productId = Convert.ToInt32(result);
 
                 // Update the product object with the generated SKU
                 product.product_sku = sku;
 
-                return Convert.ToInt32(result);
+                // Log audit action
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Create",
+                        "tbl_product",
+                        productId,
+                        null,
+                        new { product_name = product.product_name, product_sku = sku, sell_price = product.sell_price },
+                        null,
+                        null,
+                        $"added new product: {product.product_name}"
+                    );
+                }
+
+                return productId;
             }
             catch (SqlException ex)
             {
@@ -263,6 +289,13 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get old values for audit log
+                Product? oldProduct = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    oldProduct = await GetProductByIdAsync(product.product_id);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
@@ -294,7 +327,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@status", (object)product.status ?? DBNull.Value);
                 command.Parameters.AddWithValue("@modified_date", DateTime.Now);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                bool success = await command.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && oldProduct != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Update",
+                        "tbl_product",
+                        product.product_id,
+                        new { product_name = oldProduct.product_name, product_sku = oldProduct.product_sku, sell_price = oldProduct.sell_price, quantity = oldProduct.quantity },
+                        new { product_name = product.product_name, product_sku = product.product_sku, sell_price = product.sell_price, quantity = product.quantity },
+                        null,
+                        null,
+                        $"updated product: {product.product_name}"
+                    );
+                }
+
+                return success;
             }
             catch (SqlException ex)
             {
@@ -315,13 +366,38 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get product details for audit log before deletion
+                Product? productToDelete = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    productToDelete = await GetProductByIdAsync(productId);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
                 var deleteCommand = new SqlCommand("DELETE FROM tbl_product WHERE product_id = @product_id", connection);
                 deleteCommand.Parameters.AddWithValue("@product_id", productId);
 
-                return await deleteCommand.ExecuteNonQueryAsync() > 0;
+                bool success = await deleteCommand.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && productToDelete != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Delete",
+                        "tbl_product",
+                        productId,
+                        new { product_name = productToDelete.product_name, product_sku = productToDelete.product_sku, sell_price = productToDelete.sell_price },
+                        null,
+                        null,
+                        null,
+                        $"deleted product: {productToDelete.product_name}"
+                    );
+                }
+
+                return success;
             }
             catch (Exception ex)
             {

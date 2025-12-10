@@ -1,0 +1,343 @@
+@page "/auditlog"
+@page "/audit-logs"
+
+@layout MainLayout
+
+@using MauiApp2.Services
+@using MauiApp2.Models
+@using System.Linq
+
+@inject IAuthService AuthService
+@inject IAuditLogService AuditLogService
+@inject NavigationManager Navigation
+
+<link href="css/auditlogs.css" rel="stylesheet" />
+<link href="css/pagination.css" rel="stylesheet" />
+
+<div class="dashboard-wrapper">
+    <Sidebar />
+    <div class="main-content">
+        <div class="content-header" style="flex-direction: column; align-items: flex-start;">
+            <h1>Audit Logs</h1>
+            <p style="color: #6b7280; margin-top: 4px; margin-bottom: 0;">View comprehensive audit trail of all system activities and changes</p>
+        </div>
+
+        <div class="inventory-section">
+            <div class="product-table-container">
+                <!-- Alert Messages -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span>@errorMessage</span>
+                        <button class="alert-close" @onclick="ClearError"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                @if (isLoading)
+                {
+                    <div class="loading-indicator">
+                        <div class="spinner"></div>
+                        <span>Loading audit logs...</span>
+                    </div>
+                }
+
+                <!-- Filters Section -->
+                <div class="toolbar" style="flex-wrap: wrap; gap: 10px; margin-bottom: 20px;">
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <div style="display: flex; flex-direction: column; gap: 5px;">
+                            <label style="font-size: 12px; color: #666;">Start Date</label>
+                            <input type="date" @bind="filterStartDate" @bind:event="onchange" class="search-input" style="width: 150px;" />
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 5px;">
+                            <label style="font-size: 12px; color: #666;">End Date</label>
+                            <input type="date" @bind="filterEndDate" @bind:event="onchange" class="search-input" style="width: 150px;" />
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 5px;">
+                            <label style="font-size: 12px; color: #666;">Action Type</label>
+                            <select @bind="filterActionType" @bind:event="onchange" class="search-input" style="width: 150px;">
+                                <option value="">All Actions</option>
+                                <option value="Login">Login</option>
+                                <option value="Logout">Logout</option>
+                                <option value="Create">Create</option>
+                                <option value="Update">Update</option>
+                                <option value="Delete">Delete</option>
+                                <option value="View">View</option>
+                                <option value="Login Failed">Login Failed</option>
+                                <option value="Update Password">Update Password</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; align-items: flex-end; gap: 10px;">
+                            <button class="add-item-btn" @onclick="ApplyFilters" style="height: 38px;">
+                                <i class="fas fa-filter"></i>
+                                <span>Apply Filters</span>
+                            </button>
+                            <button class="edit-btn" @onclick="ClearFilters" style="height: 38px;">
+                                <i class="fas fa-times"></i>
+                                <span>Clear</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="product-table">
+                        <thead>
+                            <tr>
+                                <th>Date/Time</th>
+                                <th>User</th>
+                                <th>Action</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (PaginatedLogs.Any())
+                            {
+                                @foreach (var log in PaginatedLogs)
+                                {
+                                    <tr>
+                                        <td>@log.created_date.ToString("MMM dd, yyyy HH:mm:ss")</td>
+                                        <td>
+                                            <div>
+                                                <strong>@(log.user_name ?? log.username ?? "Unknown")</strong>
+                                                <br />
+                                                <small style="color: #666;">@(log.username ?? "")</small>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="status-badge @GetActionBadgeClass(log.action_type)">
+                                                @log.action_type
+                                            </span>
+                                        </td>
+                                        <td>@(log.description ?? "-")</td>
+                                    </tr>
+                                }
+                            }
+                            else
+                            {
+                                <tr>
+                                    <td colspan="4" class="empty-state-cell">
+                                        <div class="empty-state">
+                                            <i class="fas fa-clipboard-list empty-state-icon"></i>
+                                            <p class="empty-state-text">
+                                                @if (hasFilters)
+                                                {
+                                                    <text>No audit logs match your filter criteria.</text>
+                                                }
+                                                else
+                                                {
+                                                    <text>No audit logs found.</text>
+                                                }
+                                            </p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                @if (FilteredLogs.Count > pageSize)
+                {
+                    <Pagination CurrentPage="@currentPage" 
+                                PageSize="@pageSize"
+                                TotalItems="@FilteredLogs.Count" 
+                                PageChanged="@OnPageChanged" />
+                }
+
+                <div style="margin-top: 20px; color: #666; font-size: 14px;">
+                    Showing @((currentPage - 1) * pageSize + 1) - @(Math.Min(currentPage * pageSize, FilteredLogs.Count)) of @FilteredLogs.Count audit logs
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log Details Modal -->
+@if (showLogDetailsModal && selectedLog != null)
+{
+    <div class="modal-overlay" @onclick="CloseLogDetails">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2>Audit Log Details</h2>
+                <button class="modal-close" @onclick="CloseLogDetails">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 10px;">Log Information</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 8px; font-weight: bold; width: 150px;">Date/Time:</td>
+                            <td style="padding: 8px;">@selectedLog.created_date.ToString("MMM dd, yyyy HH:mm:ss")</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; font-weight: bold;">User:</td>
+                            <td style="padding: 8px;">@(selectedLog.user_name ?? selectedLog.username ?? "Unknown")</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; font-weight: bold;">Action:</td>
+                            <td style="padding: 8px;">
+                                <span class="status-badge @GetActionBadgeClass(selectedLog.action_type)">
+                                    @selectedLog.action_type
+                                </span>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+
+                @if (!string.IsNullOrEmpty(selectedLog.new_values))
+                {
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="margin-bottom: 10px;">New Values</h3>
+                        <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px;">@FormatJson(selectedLog.new_values)</pre>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="edit-btn" @onclick="CloseLogDetails">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<AuditLog> auditLogs = new();
+    private List<AuditLog> FilteredLogs = new();
+    private string errorMessage = "";
+    private bool isLoading = false;
+    private bool showLogDetailsModal = false;
+    private AuditLog? selectedLog = null;
+
+    // Filters
+    private DateTime? filterStartDate = null;
+    private DateTime? filterEndDate = null;
+    private string filterActionType = "";
+    private bool hasFilters = false;
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 20;
+    private int totalPages => (int)Math.Ceiling(FilteredLogs.Count / (double)pageSize);
+    private List<AuditLog> PaginatedLogs => FilteredLogs.Skip((currentPage - 1) * pageSize).Take(pageSize).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadAuditLogs();
+    }
+
+    private async Task LoadAuditLogs()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = "";
+
+            DateTime? startDate = filterStartDate;
+            DateTime? endDate = filterEndDate;
+            if (endDate.HasValue)
+            {
+                endDate = endDate.Value.AddDays(1).AddSeconds(-1); // Include the entire end date
+            }
+
+            auditLogs = await AuditLogService.GetAuditLogsAsync(
+                startDate: startDate,
+                endDate: endDate,
+                userId: null,
+                actionType: string.IsNullOrWhiteSpace(filterActionType) ? null : filterActionType
+            );
+
+            FilteredLogs = auditLogs;
+            currentPage = 1;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading audit logs: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ApplyFilters()
+    {
+        hasFilters = filterStartDate.HasValue || filterEndDate.HasValue || 
+                     !string.IsNullOrWhiteSpace(filterActionType);
+        await LoadAuditLogs();
+    }
+
+    private async Task ClearFilters()
+    {
+        filterStartDate = null;
+        filterEndDate = null;
+        filterActionType = "";
+        hasFilters = false;
+        await LoadAuditLogs();
+    }
+
+    private void OnPageChanged(int page)
+    {
+        currentPage = page;
+    }
+
+    private string GetActionBadgeClass(string actionType)
+    {
+        return actionType switch
+        {
+            "Login" => "active",
+            "Logout" => "inactive",
+            "Create" => "active",
+            "Update" => "role-badge",
+            "Delete" => "inactive",
+            "Login Failed" => "inactive",
+            _ => "role-badge"
+        };
+    }
+
+    private void ShowLogDetails(AuditLog log)
+    {
+        selectedLog = log;
+        showLogDetailsModal = true;
+    }
+
+    private void CloseLogDetails()
+    {
+        showLogDetailsModal = false;
+        selectedLog = null;
+    }
+
+    private string FormatJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return "";
+
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(doc, new System.Text.Json.JsonSerializerOptions 
+            { 
+                WriteIndented = true 
+            });
+        }
+        catch
+        {
+            return json;
+        }
+    }
+
+    private void ClearError()
+    {
+        errorMessage = "";
+    }
+}
+

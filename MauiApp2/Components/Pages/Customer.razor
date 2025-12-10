@@ -1,4 +1,4 @@
-@page "/suppliers"
+@page "/customers"
 
 @layout MainLayout
 
@@ -6,7 +6,7 @@
 
 @using MauiApp2.Models
 
-@using SupplierModel = MauiApp2.Models.Supplier
+@using CustomerModel = MauiApp2.Models.Customer
 
 @using Microsoft.JSInterop
 
@@ -14,11 +14,11 @@
 
 @inject NavigationManager Navigation
 
-@inject ISupplierService SupplierService
+@inject ICustomerService CustomerService
 
 @inject IJSRuntime JSRuntime
 
-<link href="css/supplier.css" rel="stylesheet" />
+<link href="css/customer.css" rel="stylesheet" />
 
 <link href="css/pagination.css" rel="stylesheet" />
 
@@ -29,8 +29,8 @@
     <div class="main-content">
 
         <div class="content-header" style="flex-direction: column; align-items: flex-start;">
-            <h1>Supplier Management</h1>
-            <p style="color: #6b7280; margin-top: 4px; margin-bottom: 0;">Manage supplier information, contacts, and purchase order relationships</p>
+            <h1>Customer Management</h1>
+            <p style="color: #6b7280; margin-top: 4px; margin-bottom: 0;">Manage customer accounts, contact information, and sales relationships</p>
         </div>
 
         <div class="inventory-section">
@@ -79,7 +79,7 @@
 
                         <div class="spinner"></div>
 
-                        <span>Loading suppliers...</span>
+                        <span>Loading customers...</span>
 
                     </div>
 
@@ -89,14 +89,14 @@
 
                     <button class="add-item-btn" @onclick="ShowAddModal" disabled="@isLoading">
                         <i class="fas fa-plus"></i>
-                        <span>Add Supplier</span>
+                        <span>Add Customer</span>
                     </button>
 
                     <div class="search-container">
 
                         <input type="text"
                                class="search-input"
-                               placeholder="Search suppliers..."
+                               placeholder="Search customers..."
                                value="@searchQuery"
                                @oninput="OnSearchInput"
                                disabled="@isLoading" />
@@ -114,11 +114,13 @@
 
                         <tr>
 
-                            <th>Supplier Name</th>
+                            <th>Customer Name</th>
 
                             <th>Contact Number</th>
 
                             <th>Email</th>
+
+                            <th>Address</th>
 
                             <th>Status</th>
 
@@ -134,25 +136,25 @@
 
                     <tbody>
 
-                        @if (PaginatedSuppliers.Any())
+                        @if (PaginatedCustomers.Any())
 
                         {
 
-                            @foreach (var supplier in PaginatedSuppliers)
+                            @foreach (var customer in PaginatedCustomers)
 
                             {
 
                                 <tr>
 
-                                    <td class="product-name-cell">@supplier.supplier_name</td>
+                                    <td class="product-name-cell">@customer.customer_name</td>
 
                                     <td>
 
-                                        @if (!string.IsNullOrEmpty(supplier.contact_number))
+                                        @if (!string.IsNullOrEmpty(customer.contact_number))
 
                                         {
 
-                                            <span>@supplier.contact_number</span>
+                                            <span>@customer.contact_number</span>
 
                                         }
 
@@ -168,11 +170,11 @@
 
                                     <td>
 
-                                        @if (!string.IsNullOrEmpty(supplier.email))
+                                        @if (!string.IsNullOrEmpty(customer.email))
 
                                         {
 
-                                            <span>@supplier.email</span>
+                                            <span>@customer.email</span>
 
                                         }
 
@@ -188,9 +190,29 @@
 
                                     <td>
 
-                                        <span class="status-badge @(supplier.is_active ? "status-active" : "status-inactive")">
+                                        @if (!string.IsNullOrEmpty(customer.address))
 
-                                            @(supplier.is_active ? "Active" : "Inactive")
+                                        {
+
+                                            <span>@customer.address</span>
+
+                                        }
+
+                                        else
+
+                                        {
+
+                                            <span class="no-data">-</span>
+
+                                        }
+
+                                    </td>
+
+                                    <td>
+
+                                        <span class="status-badge @(customer.is_active ? "status-active" : "status-inactive")">
+
+                                            @(customer.is_active ? "Active" : "Inactive")
 
                                         </span>
 
@@ -198,17 +220,17 @@
 
                                     <td>
 
-                                        @supplier.created_date.ToString("MMM dd, yyyy")
+                                        @customer.created_date.ToString("MMM dd, yyyy")
 
                                     </td>
 
                                     <td>
 
-                                        @if (supplier.modified_date.HasValue)
+                                        @if (customer.modified_date.HasValue)
 
                                         {
 
-                                            <span>@supplier.modified_date.Value.ToString("MMM dd, yyyy")</span>
+                                            <span>@customer.modified_date.Value.ToString("MMM dd, yyyy")</span>
 
                                         }
 
@@ -225,7 +247,7 @@
                                     <td>
 
                                         <button class="edit-btn"
-                                                @onclick="() => ShowEditModal(supplier)"
+                                                @onclick="() => ShowEditModal(customer)"
                                                 disabled="@isLoading">
                                             <i class="fas fa-edit"></i>
                                             <span>Edit</span>
@@ -245,16 +267,16 @@
 
                             <tr>
 
-                                <td colspan="7" class="empty-state-cell">
+                                <td colspan="8" class="empty-state-cell">
                                     <div class="empty-state">
                                         <i class="fas fa-folder-open empty-state-icon"></i>
                                         @if (string.IsNullOrWhiteSpace(searchQuery))
                                         {
-                                            <p class="empty-state-text">No suppliers found. Click "Add Supplier" to add your first supplier.</p>
+                                            <p class="empty-state-text">No customers found. Click "Add Customer" to add your first customer.</p>
                                         }
                                         else
                                         {
-                                            <p class="empty-state-text">No suppliers match your search criteria.</p>
+                                            <p class="empty-state-text">No customers match your search criteria.</p>
                                         }
                                     </div>
                                 </td>
@@ -269,45 +291,49 @@
                 </div>
 
                 <!-- Mobile Card View -->
-                <div class="supplier-cards-container">
-                    @if (PaginatedSuppliers.Any())
+                <div class="customer-cards-container">
+                    @if (PaginatedCustomers.Any())
                     {
-                        @foreach (var supplier in PaginatedSuppliers)
+                        @foreach (var customer in PaginatedCustomers)
                         {
-                            <div class="supplier-card">
-                                <div class="supplier-card-header">
-                                    <h3 class="supplier-card-title">@supplier.supplier_name</h3>
-                                    <button class="edit-btn" @onclick="() => ShowEditModal(supplier)" disabled="@isLoading">
+                            <div class="customer-card">
+                                <div class="customer-card-header">
+                                    <h3 class="customer-card-title">@customer.customer_name</h3>
+                                    <button class="edit-btn" @onclick="() => ShowEditModal(customer)" disabled="@isLoading">
                                         <i class="fas fa-edit"></i>
                                         <span>Edit</span>
                                     </button>
                                 </div>
-                                <div class="supplier-card-body">
-                                    <div class="supplier-info-group">
-                                        <span class="supplier-info-label">Contact Number</span>
-                                        <span class="supplier-info-value">@(string.IsNullOrEmpty(supplier.contact_number) ? "—" : supplier.contact_number)</span>
+                                <div class="customer-card-body">
+                                    <div class="customer-info-group">
+                                        <span class="customer-info-label">Contact Number</span>
+                                        <span class="customer-info-value">@(string.IsNullOrEmpty(customer.contact_number) ? "—" : customer.contact_number)</span>
                                     </div>
-                                    <div class="supplier-info-group">
-                                        <span class="supplier-info-label">Email</span>
-                                        <span class="supplier-info-value">@(string.IsNullOrEmpty(supplier.email) ? "—" : supplier.email)</span>
+                                    <div class="customer-info-group">
+                                        <span class="customer-info-label">Email</span>
+                                        <span class="customer-info-value">@(string.IsNullOrEmpty(customer.email) ? "—" : customer.email)</span>
                                     </div>
-                                    <div class="supplier-info-group">
-                                        <span class="supplier-info-label">Status</span>
-                                        <span class="supplier-info-value">
-                                            <span class="status-badge @(supplier.is_active ? "status-active" : "status-inactive")">
-                                                @(supplier.is_active ? "Active" : "Inactive")
+                                    <div class="customer-info-group">
+                                        <span class="customer-info-label">Address</span>
+                                        <span class="customer-info-value">@(string.IsNullOrEmpty(customer.address) ? "—" : customer.address)</span>
+                                    </div>
+                                    <div class="customer-info-group">
+                                        <span class="customer-info-label">Status</span>
+                                        <span class="customer-info-value">
+                                            <span class="status-badge @(customer.is_active ? "status-active" : "status-inactive")">
+                                                @(customer.is_active ? "Active" : "Inactive")
                                             </span>
                                         </span>
                                     </div>
-                                    <div class="supplier-info-group">
-                                        <span class="supplier-info-label">Created Date</span>
-                                        <span class="supplier-info-value">@supplier.created_date.ToString("MMM dd, yyyy")</span>
+                                    <div class="customer-info-group">
+                                        <span class="customer-info-label">Created Date</span>
+                                        <span class="customer-info-value">@customer.created_date.ToString("MMM dd, yyyy")</span>
                                     </div>
-                                    @if (supplier.modified_date.HasValue)
+                                    @if (customer.modified_date.HasValue)
                                     {
-                                        <div class="supplier-info-group">
-                                            <span class="supplier-info-label">Modified Date</span>
-                                            <span class="supplier-info-value">@supplier.modified_date.Value.ToString("MMM dd, yyyy")</span>
+                                        <div class="customer-info-group">
+                                            <span class="customer-info-label">Modified Date</span>
+                                            <span class="customer-info-value">@customer.modified_date.Value.ToString("MMM dd, yyyy")</span>
                                         </div>
                                     }
                                 </div>
@@ -320,24 +346,24 @@
                             <i class="fas fa-folder-open empty-state-icon"></i>
                             @if (string.IsNullOrWhiteSpace(searchQuery))
                             {
-                                <p class="empty-state-text">No suppliers found. Click "Add Supplier" to add your first supplier.</p>
+                                <p class="empty-state-text">No customers found. Click "Add Customer" to add your first customer.</p>
                             }
                             else
                             {
-                                <p class="empty-state-text">No suppliers match your search criteria.</p>
+                                <p class="empty-state-text">No customers match your search criteria.</p>
                             }
                         </div>
                     }
                 </div>
 
                 <!-- Pagination -->
-                @if (FilteredSuppliers.Any())
+                @if (FilteredCustomers.Any())
 
                 {
 
                     <Pagination CurrentPage="@currentPage"
                                 PageSize="@pageSize"
-                                TotalItems="@FilteredSuppliers.Count()"
+                                TotalItems="@FilteredCustomers.Count()"
                                 PageChanged="@OnPageChanged"
                                 PageSizeChanged="@OnPageSizeChanged" />
 
@@ -351,7 +377,7 @@
 
 </div>
 
-<!-- Add Supplier Modal -->
+<!-- Add Customer Modal -->
 @if (showAddModal)
 
 {
@@ -362,7 +388,7 @@
 
             <div class="modal-header">
 
-                <h3>Add New Supplier</h3>
+                <h3>Add New Customer</h3>
 
                 <button class="modal-close" @onclick="ShowCancelAddModal"><i class="fas fa-times"></i></button>
 
@@ -375,20 +401,20 @@
 
                     <div class="form-group">
 
-                        <label>Supplier Name *</label>
+                        <label>Customer Name *</label>
 
                         <input type="text"
-                               class="form-control @(hasAttemptedSubmit && HasError("SupplierName") ? "input-error" : "")"
-                               @bind="newSupplierName"
-                               placeholder="Enter supplier name"
+                               class="form-control @(hasAttemptedSubmit && HasError("CustomerName") ? "input-error" : "")"
+                               @bind="newCustomerName"
+                               placeholder="Enter customer name"
                                maxlength="100"
                                disabled="@isLoading" />
 
-                        @if (hasAttemptedSubmit && HasError("SupplierName"))
+                        @if (hasAttemptedSubmit && HasError("CustomerName"))
 
                         {
 
-                            <span class="field-error">@GetError("SupplierName")</span>
+                            <span class="field-error">@GetError("CustomerName")</span>
 
                         }
 
@@ -437,6 +463,19 @@
 
                     </div>
 
+                    <div class="form-group">
+
+                        <label>Address</label>
+
+                        <textarea class="form-control"
+                                  @bind="newAddress"
+                                  placeholder="Enter customer address (optional)"
+                                  rows="3"
+                                  maxlength="500"
+                                  disabled="@isLoading"></textarea>
+
+                    </div>
+
                 </div>
 
             </div>
@@ -445,7 +484,7 @@
 
                 <button class="btn-cancel" @onclick="ShowCancelAddModal" disabled="@isLoading">Cancel</button>
 
-                <button class="btn-submit" @onclick="ShowAddSupplierConfirmation" disabled="@isLoading">
+                <button class="btn-submit" @onclick="ShowAddCustomerConfirmation" disabled="@isLoading">
 
                     @if (isLoading)
 
@@ -455,7 +494,7 @@
 
                     }
 
-                    Add Supplier
+                    Add Customer
 
                 </button>
 
@@ -467,8 +506,8 @@
 
 }
 
-<!-- Edit Supplier Modal -->
-@if (showEditModal && editingSupplier != null)
+<!-- Edit Customer Modal -->
+@if (showEditModal && editingCustomer != null)
 
 {
 
@@ -478,7 +517,7 @@
 
             <div class="modal-header">
 
-                <h3>Edit Supplier</h3>
+                <h3>Edit Customer</h3>
 
                 <button class="modal-close" @onclick="ShowCancelEditModal"><i class="fas fa-times"></i></button>
 
@@ -491,20 +530,20 @@
 
                     <div class="form-group">
 
-                        <label>Supplier Name *</label>
+                        <label>Customer Name *</label>
 
                         <input type="text"
-                               class="form-control @(hasAttemptedEditSubmit && HasEditError("SupplierName") ? "input-error" : "")"
-                               @bind="editSupplierName"
-                               placeholder="Enter supplier name"
+                               class="form-control @(hasAttemptedEditSubmit && HasEditError("CustomerName") ? "input-error" : "")"
+                               @bind="editCustomerName"
+                               placeholder="Enter customer name"
                                maxlength="100"
                                disabled="@isLoading" />
 
-                        @if (hasAttemptedEditSubmit && HasEditError("SupplierName"))
+                        @if (hasAttemptedEditSubmit && HasEditError("CustomerName"))
 
                         {
 
-                            <span class="field-error">@GetEditError("SupplierName")</span>
+                            <span class="field-error">@GetEditError("CustomerName")</span>
 
                         }
 
@@ -555,6 +594,19 @@
 
                     <div class="form-group">
 
+                        <label>Address</label>
+
+                        <textarea class="form-control"
+                                  @bind="editAddress"
+                                  placeholder="Enter customer address (optional)"
+                                  rows="3"
+                                  maxlength="500"
+                                  disabled="@isLoading"></textarea>
+
+                    </div>
+
+                    <div class="form-group">
+
                         <label>Status *</label>
 
                         <select class="form-control"
@@ -578,7 +630,7 @@
 
                 <button class="btn-cancel" @onclick="ShowCancelEditModal" disabled="@isLoading">Cancel</button>
 
-                <button class="btn-submit" @onclick="ShowUpdateSupplierConfirmation" disabled="@isLoading">
+                <button class="btn-submit" @onclick="ShowUpdateCustomerConfirmation" disabled="@isLoading">
 
                     @if (isLoading)
 
@@ -588,7 +640,7 @@
 
                     }
 
-                    Update Supplier
+                    Update Customer
 
                 </button>
 
@@ -600,23 +652,23 @@
 
 }
 
-<!-- Confirmation Modal for Add Supplier -->
-@if (showAddSupplierConfirmation)
+<!-- Confirmation Modal for Add Customer -->
+@if (showAddCustomerConfirmation)
 {
     <div class="modal-overlay confirmation-modal-overlay">
         <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
             <div class="modal-header confirmation-modal-header">
-                <h3>Confirm Add Supplier</h3>
-                <button class="modal-close" @onclick="CloseAddSupplierConfirmation"><i class="fas fa-times"></i></button>
+                <h3>Confirm Add Customer</h3>
+                <button class="modal-close" @onclick="CloseAddCustomerConfirmation"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body confirmation-modal-body">
                 <div class="confirmation-message-box">
-                    <p class="confirmation-question">Are you sure you want to add this supplier?</p>
+                    <p class="confirmation-question">Are you sure you want to add this customer?</p>
                 </div>
                 <div class="confirmation-details">
                     <div class="confirmation-detail-item">
-                        <span class="confirmation-label">Supplier Name:</span>
-                        <span class="confirmation-value">@newSupplierName</span>
+                        <span class="confirmation-label">Customer Name:</span>
+                        <span class="confirmation-value">@newCustomerName</span>
                     </div>
                     <div class="confirmation-detail-item">
                         <span class="confirmation-label">Contact Number:</span>
@@ -626,33 +678,37 @@
                         <span class="confirmation-label">Email:</span>
                         <span class="confirmation-value">@(string.IsNullOrWhiteSpace(newEmail) ? "N/A" : newEmail)</span>
                     </div>
+                    <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Address:</span>
+                        <span class="confirmation-value">@(string.IsNullOrWhiteSpace(newAddress) ? "N/A" : newAddress)</span>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer confirmation-modal-footer">
-                <button class="btn-cancel" @onclick="CloseAddSupplierConfirmation">Cancel</button>
-                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmAddSupplier">Confirm Add</button>
+                <button class="btn-cancel" @onclick="CloseAddCustomerConfirmation">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmAddCustomer">Confirm Add</button>
             </div>
         </div>
     </div>
 }
 
-<!-- Confirmation Modal for Update Supplier -->
-@if (showUpdateSupplierConfirmation)
+<!-- Confirmation Modal for Update Customer -->
+@if (showUpdateCustomerConfirmation)
 {
     <div class="modal-overlay confirmation-modal-overlay">
         <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
             <div class="modal-header confirmation-modal-header">
-                <h3>Confirm Update Supplier</h3>
-                <button class="modal-close" @onclick="CloseUpdateSupplierConfirmation"><i class="fas fa-times"></i></button>
+                <h3>Confirm Update Customer</h3>
+                <button class="modal-close" @onclick="CloseUpdateCustomerConfirmation"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body confirmation-modal-body">
                 <div class="confirmation-message-box">
-                    <p class="confirmation-question">Are you sure you want to update this supplier?</p>
+                    <p class="confirmation-question">Are you sure you want to update this customer?</p>
                 </div>
                 <div class="confirmation-details">
                     <div class="confirmation-detail-item">
-                        <span class="confirmation-label">Supplier Name:</span>
-                        <span class="confirmation-value">@editSupplierName</span>
+                        <span class="confirmation-label">Customer Name:</span>
+                        <span class="confirmation-value">@editCustomerName</span>
                     </div>
                     <div class="confirmation-detail-item">
                         <span class="confirmation-label">Contact Number:</span>
@@ -663,20 +719,24 @@
                         <span class="confirmation-value">@(string.IsNullOrWhiteSpace(editEmail) ? "N/A" : editEmail)</span>
                     </div>
                     <div class="confirmation-detail-item">
+                        <span class="confirmation-label">Address:</span>
+                        <span class="confirmation-value">@(string.IsNullOrWhiteSpace(editAddress) ? "N/A" : editAddress)</span>
+                    </div>
+                    <div class="confirmation-detail-item">
                         <span class="confirmation-label">Status:</span>
                         <span class="confirmation-value">@(editIsActive ? "Active" : "Inactive")</span>
                     </div>
                 </div>
             </div>
             <div class="modal-footer confirmation-modal-footer">
-                <button class="btn-cancel" @onclick="CloseUpdateSupplierConfirmation">Cancel</button>
-                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmUpdateSupplier">Confirm Update</button>
+                <button class="btn-cancel" @onclick="CloseUpdateCustomerConfirmation">Cancel</button>
+                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmUpdateCustomer">Confirm Update</button>
             </div>
         </div>
     </div>
 }
 
-<!-- Cancellation Modal for Add Supplier -->
+<!-- Cancellation Modal for Add Customer -->
 @if (showCancelAddModal)
 {
     <div class="modal-overlay cancellation-modal-overlay">
@@ -684,7 +744,7 @@
             <div class="modal-header cancellation-modal-header">
                 <h3>
                     <i class="fas fa-exclamation-triangle"></i>
-                    Cancel Add Supplier?
+                    Cancel Add Customer?
                 </h3>
                 <button class="modal-close" @onclick="CloseCancelAddModal"><i class="fas fa-times"></i></button>
             </div>
@@ -702,7 +762,7 @@
     </div>
 }
 
-<!-- Cancellation Modal for Edit Supplier -->
+<!-- Cancellation Modal for Edit Customer -->
 @if (showCancelEditModal)
 {
     <div class="modal-overlay cancellation-modal-overlay">
@@ -710,7 +770,7 @@
             <div class="modal-header cancellation-modal-header">
                 <h3>
                     <i class="fas fa-exclamation-triangle"></i>
-                    Cancel Edit Supplier?
+                    Cancel Edit Customer?
                 </h3>
                 <button class="modal-close" @onclick="CloseCancelEditModal"><i class="fas fa-times"></i></button>
             </div>
@@ -757,15 +817,15 @@
 
     private string searchQuery = "";
 
-    private List<SupplierModel> suppliers = new();
+    private List<CustomerModel> customers = new();
 
     private bool showAddModal = false;
 
     private bool showEditModal = false;
 
-    private bool showAddSupplierConfirmation = false;
+    private bool showAddCustomerConfirmation = false;
 
-    private bool showUpdateSupplierConfirmation = false;
+    private bool showUpdateCustomerConfirmation = false;
 
     private bool showCancelAddModal = false;
 
@@ -775,7 +835,7 @@
 
     private string successModalMessage = "";
 
-    private SupplierModel? editingSupplier = null;
+    private CustomerModel? editingCustomer = null;
 
     private bool isLoading = false;
 
@@ -787,20 +847,23 @@
 
     // Add form fields
 
-    private string newSupplierName = "";
+    private string newCustomerName = "";
 
     private string newContactNumber = "";
 
     private string newEmail = "";
 
+    private string newAddress = "";
 
     // Edit form fields
 
-    private string editSupplierName = "";
+    private string editCustomerName = "";
 
     private string editContactNumber = "";
 
     private string editEmail = "";
+
+    private string editAddress = "";
 
     private bool editIsActive = true;
 
@@ -834,11 +897,11 @@
 
         }
 
-        await LoadSuppliers();
+        await LoadCustomers();
 
     }
 
-    private async Task LoadSuppliers()
+    private async Task LoadCustomers()
 
     {
 
@@ -852,8 +915,8 @@
 
             StateHasChanged();
 
-            var allSuppliers = await SupplierService.GetSuppliersAsync();
-            suppliers = allSuppliers.OrderBy(s => s.supplier_id).ToList();
+            var allCustomers = await CustomerService.GetCustomersAsync();
+            customers = allCustomers.OrderBy(s => s.customer_id).ToList();
 
         }
 
@@ -861,7 +924,7 @@
 
         {
 
-            errorMessage = $"Error loading suppliers: {ex.Message}";
+            errorMessage = $"Error loading customers: {ex.Message}";
 
             Console.WriteLine($"Error: {ex.Message}");
 
@@ -879,7 +942,7 @@
 
     }
 
-    private IEnumerable<SupplierModel> FilteredSuppliers
+    private IEnumerable<CustomerModel> FilteredCustomers
 
     {
 
@@ -888,20 +951,21 @@
         {
 
             var filtered = string.IsNullOrWhiteSpace(searchQuery)
-                ? suppliers
-                : suppliers.Where(s =>
-                    s.supplier_name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                ? customers
+                : customers.Where(s =>
+                    s.customer_name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
                     (s.contact_number != null && s.contact_number.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
                     (s.email != null && s.email.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
-                    s.supplier_id.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+                    (s.address != null && s.address.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    s.customer_id.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
 
-            return filtered.OrderByDescending(s => s.created_date).ThenBy(s => s.supplier_id);
+            return filtered.OrderByDescending(s => s.created_date).ThenBy(s => s.customer_id);
 
         }
 
     }
 
-    private IEnumerable<SupplierModel> PaginatedSuppliers
+    private IEnumerable<CustomerModel> PaginatedCustomers
 
     {
 
@@ -909,7 +973,7 @@
 
         {
 
-            var filtered = FilteredSuppliers.ToList();
+            var filtered = FilteredCustomers.ToList();
 
             return filtered.Skip((currentPage - 1) * pageSize).Take(pageSize);
 
@@ -1098,11 +1162,11 @@
         CloseAddModal();
     }
 
-    private void ShowEditModal(SupplierModel supplier)
+    private void ShowEditModal(CustomerModel customer)
 
     {
 
-        editingSupplier = supplier;
+        editingCustomer = customer;
 
         showEditModal = true;
 
@@ -1112,15 +1176,17 @@
 
         // Populate edit form
 
-        editSupplierName = supplier.supplier_name;
+            editCustomerName = customer.customer_name;
+            editAddress = customer.address ?? "";
 
         // Extract digits from contact number (remove +63 prefix if present)
 
-        editContactNumber = GetDisplayPhoneNumber(supplier.contact_number ?? "");
+        editContactNumber = GetDisplayPhoneNumber(customer.contact_number ?? "");
 
-        editEmail = supplier.email ?? "";
+        editEmail = customer.email ?? "";
+        editAddress = customer.address ?? "";
 
-        editIsActive = supplier.is_active;
+        editIsActive = customer.is_active;
 
         StateHasChanged();
 
@@ -1132,7 +1198,7 @@
 
         showEditModal = false;
 
-        editingSupplier = null;
+        editingCustomer = null;
 
         hasAttemptedEditSubmit = false; // Reset submit attempt flag
 
@@ -1172,11 +1238,12 @@
 
     {
 
-        newSupplierName = "";
+        newCustomerName = "";
 
         newContactNumber = "";
 
         newEmail = "";
+        newAddress = "";
 
         validationErrors.Clear();
 
@@ -1188,11 +1255,12 @@
 
     {
 
-        editSupplierName = "";
+        editCustomerName = "";
 
         editContactNumber = "";
 
         editEmail = "";
+        editAddress = "";
 
         editIsActive = true;
 
@@ -1228,17 +1296,17 @@
 
         validationErrors.Clear();
 
-        if (string.IsNullOrWhiteSpace(newSupplierName))
+        if (string.IsNullOrWhiteSpace(newCustomerName))
 
-            AddValidationError("SupplierName", "Supplier name is required");
+            AddValidationError("CustomerName", "Customer name is required");
 
-        else if (newSupplierName.Trim().Length < 2)
+        else if (newCustomerName.Trim().Length < 2)
 
-            AddValidationError("SupplierName", "Supplier name must be at least 2 characters long");
+            AddValidationError("CustomerName", "Customer name must be at least 2 characters long");
 
-        else if (suppliers.Any(s => s.supplier_name.Equals(newSupplierName.Trim(), StringComparison.OrdinalIgnoreCase)))
+        else if (customers.Any(s => s.customer_name.Equals(newCustomerName.Trim(), StringComparison.OrdinalIgnoreCase)))
 
-            AddValidationError("SupplierName", "Supplier name already exists");
+            AddValidationError("CustomerName", "Customer name already exists");
 
         if (!string.IsNullOrWhiteSpace(newEmail) && !IsValidEmail(newEmail))
 
@@ -1252,17 +1320,17 @@
 
         editValidationErrors.Clear();
 
-        if (string.IsNullOrWhiteSpace(editSupplierName))
+        if (string.IsNullOrWhiteSpace(editCustomerName))
 
-            AddEditValidationError("SupplierName", "Supplier name is required");
+            AddEditValidationError("CustomerName", "Customer name is required");
 
-        else if (editSupplierName.Trim().Length < 2)
+        else if (editCustomerName.Trim().Length < 2)
 
-            AddEditValidationError("SupplierName", "Supplier name must be at least 2 characters long");
+            AddEditValidationError("CustomerName", "Customer name must be at least 2 characters long");
 
-        else if (suppliers.Any(s => s.supplier_name.Equals(editSupplierName.Trim(), StringComparison.OrdinalIgnoreCase) && s.supplier_id != editingSupplier?.supplier_id))
+        else if (customers.Any(s => s.customer_name.Equals(editCustomerName.Trim(), StringComparison.OrdinalIgnoreCase) && s.customer_id != editingCustomer?.customer_id))
 
-            AddEditValidationError("SupplierName", "Supplier name already exists");
+            AddEditValidationError("CustomerName", "Customer name already exists");
 
         if (!string.IsNullOrWhiteSpace(editEmail) && !IsValidEmail(editEmail))
 
@@ -1358,7 +1426,7 @@
 
             ValidateAddForm();
 
-            return validationErrors.Count == 0 && !string.IsNullOrWhiteSpace(newSupplierName);
+            return validationErrors.Count == 0 && !string.IsNullOrWhiteSpace(newCustomerName);
 
         }
 
@@ -1380,16 +1448,16 @@
 
             ValidateEditForm();
 
-            return editValidationErrors.Count == 0 && !string.IsNullOrWhiteSpace(editSupplierName);
+            return editValidationErrors.Count == 0 && !string.IsNullOrWhiteSpace(editCustomerName);
 
         }
 
     }
 
     // Confirmation Modal Methods
-    private void ShowAddSupplierConfirmation()
+    private void ShowAddCustomerConfirmation()
     {
-        Console.WriteLine("ShowAddSupplierConfirmation called");
+        Console.WriteLine("ShowAddCustomerConfirmation called");
         hasAttemptedSubmit = true;
         errorMessage = "";
         validationErrors.Clear();
@@ -1406,17 +1474,17 @@
         }
 
         Console.WriteLine("Validation passed, showing confirmation modal");
-        showAddSupplierConfirmation = true;
+        showAddCustomerConfirmation = true;
         StateHasChanged();
     }
 
-    private void CloseAddSupplierConfirmation()
+    private void CloseAddCustomerConfirmation()
     {
-        showAddSupplierConfirmation = false;
+        showAddCustomerConfirmation = false;
         StateHasChanged();
     }
 
-    private void ShowUpdateSupplierConfirmation()
+    private void ShowUpdateCustomerConfirmation()
     {
         hasAttemptedEditSubmit = true;
         errorMessage = "";
@@ -1432,34 +1500,34 @@
             return;
         }
 
-        if (editingSupplier == null)
+        if (editingCustomer == null)
         {
-            errorMessage = "Error: No supplier selected for editing.";
+            errorMessage = "Error: No customer selected for editing.";
             StateHasChanged();
             return;
         }
 
-        showUpdateSupplierConfirmation = true;
+        showUpdateCustomerConfirmation = true;
         StateHasChanged();
     }
 
-    private void CloseUpdateSupplierConfirmation()
+    private void CloseUpdateCustomerConfirmation()
     {
-        showUpdateSupplierConfirmation = false;
+        showUpdateCustomerConfirmation = false;
         StateHasChanged();
     }
 
     // CRUD Operations
 
-    private async Task ConfirmAddSupplier()
+    private async Task ConfirmAddCustomer()
     {
-        Console.WriteLine("ConfirmAddSupplier called");
-        showAddSupplierConfirmation = false;
+        Console.WriteLine("ConfirmAddCustomer called");
+        showAddCustomerConfirmation = false;
         StateHasChanged();
-        await AddSupplier();
+        await AddCustomer();
     }
 
-    private async Task AddSupplier()
+    private async Task AddCustomer()
 
     {
 
@@ -1471,15 +1539,17 @@
 
             StateHasChanged();
 
-            var newSupplier = new SupplierModel
+            var newCustomer = new CustomerModel
 
             {
 
-                supplier_name = newSupplierName.Trim(),
+                customer_name = newCustomerName.Trim(),
 
                 contact_number = string.IsNullOrWhiteSpace(newContactNumber) ? null : GetFullPhoneNumber(newContactNumber),
 
                 email = string.IsNullOrWhiteSpace(newEmail) ? null : newEmail.Trim(),
+
+                address = string.IsNullOrWhiteSpace(newAddress) ? null : newAddress.Trim(),
 
                 is_active = true,
 
@@ -1487,15 +1557,15 @@
 
             };
 
-            var supplierId = await SupplierService.CreateSupplierAsync(newSupplier);
+            var customerId = await CustomerService.CreateCustomerAsync(newCustomer);
 
-            await LoadSuppliers(); // Refresh the list
+            await LoadCustomers(); // Refresh the list
 
             CloseAddModal();
 
             await Task.Delay(100);
 
-            successModalMessage = $"Supplier '{newSupplierName}' added successfully!";
+            successModalMessage = $"Customer '{newCustomerName}' added successfully!";
             showSuccessModal = true;
             StateHasChanged();
 
@@ -1505,9 +1575,9 @@
 
         {
 
-            errorMessage = $"Error adding supplier: {ex.Message}";
+            errorMessage = $"Error adding customer: {ex.Message}";
 
-            Console.WriteLine($"AddSupplier error: {ex}");
+            Console.WriteLine($"AddCustomer error: {ex}");
 
             // Keep the add modal open if there's an error
             // Don't close it so user can see the error and retry
@@ -1526,13 +1596,13 @@
 
     }
 
-    private async Task ConfirmUpdateSupplier()
+    private async Task ConfirmUpdateCustomer()
     {
-        showUpdateSupplierConfirmation = false;
-        await UpdateSupplier();
+        showUpdateCustomerConfirmation = false;
+        await UpdateCustomer();
     }
 
-    private async Task UpdateSupplier()
+    private async Task UpdateCustomer()
 
     {
 
@@ -1544,37 +1614,39 @@
 
             StateHasChanged();
 
-            var updatedSupplier = new SupplierModel
+            var updatedCustomer = new CustomerModel
 
             {
 
-                supplier_id = editingSupplier.supplier_id,
+                customer_id = editingCustomer.customer_id,
 
-                supplier_name = editSupplierName.Trim(),
+                customer_name = editCustomerName.Trim(),
 
                 contact_number = string.IsNullOrWhiteSpace(editContactNumber) ? null : GetFullPhoneNumber(editContactNumber),
 
                 email = string.IsNullOrWhiteSpace(editEmail) ? null : editEmail.Trim(),
 
+                address = string.IsNullOrWhiteSpace(editAddress) ? null : editAddress.Trim(),
+
                 is_active = editIsActive,
 
-                created_date = editingSupplier.created_date
+                created_date = editingCustomer.created_date
 
             };
 
-            var success = await SupplierService.UpdateSupplierAsync(updatedSupplier);
+            var success = await CustomerService.UpdateCustomerAsync(updatedCustomer);
 
             if (success)
 
             {
 
-                await LoadSuppliers(); // Refresh the list
+                await LoadCustomers(); // Refresh the list
 
                 CloseEditModal();
 
                 await Task.Delay(100);
 
-                successModalMessage = $"Supplier '{editSupplierName}' updated successfully!";
+                successModalMessage = $"Customer '{editCustomerName}' updated successfully!";
                 showSuccessModal = true;
                 StateHasChanged();
 
@@ -1584,7 +1656,7 @@
 
             {
 
-                errorMessage = "Failed to update supplier. Please try again.";
+                errorMessage = "Failed to update customer. Please try again.";
 
             }
 
@@ -1594,7 +1666,7 @@
 
         {
 
-            errorMessage = $"Error updating supplier: {ex.Message}";
+            errorMessage = $"Error updating customer: {ex.Message}";
 
         }
 

@@ -5,6 +5,8 @@
 @using SupplierModel = MauiApp2.Models.Supplier
 @using TaxModel = MauiApp2.Models.Tax
 @using Microsoft.JSInterop
+@using Microsoft.Data.SqlClient
+@using MauiApp2.Components.Database
 @inject IAuthService AuthService
 @inject NavigationManager Navigation
 @inject ISupplierService SupplierService
@@ -18,17 +20,12 @@
 <div class="dashboard-wrapper">
     <Sidebar />
     <div class="main-content">
-        <div class="content-header">
+        <div class="content-header" style="flex-direction: column; align-items: flex-start;">
             <h1>Purchase Order Management</h1>
+            <p style="color: #6b7280; margin-top: 4px; margin-bottom: 0;">Create and manage purchase orders, receive stock, and track inventory receipts</p>
         </div>
 
         <div class="inventory-section">
-            <div class="tab-section">
-                <div class="tabs">
-                    <button class="tab active">Create Purchase Order</button>
-                </div>
-            </div>
-
             <div class="product-table-container">
                 <!-- Alert Messages -->
                 @if (!string.IsNullOrEmpty(errorMessage))
@@ -46,6 +43,14 @@
                         <span class="alert-icon"><i class="fas fa-check-circle"></i></span>
                         <span>@successMessage</span>
                         <button class="alert-close" @onclick="ClearSuccess"><i class="fas fa-times"></i></button>
+                    </div>
+                }
+
+                @if (isLoading)
+                {
+                    <div class="loading-indicator">
+                        <div class="spinner"></div>
+                        <span>Loading purchase orders...</span>
                     </div>
                 }
 
@@ -307,6 +312,7 @@
                                 TotalItems="@FilteredOrders.Count()"
                                 PageChanged="@OnPageChanged"
                                 PageSizeChanged="@OnPageSizeChanged" />
+                }
                 }
             </div>
         </div>
@@ -971,6 +977,7 @@
     private List<SupplierDisplay> suppliers = new List<SupplierDisplay>();
     private List<ProductDisplay> products = new List<ProductDisplay>();
     private List<TaxModel> availableTaxes = new List<TaxModel>();
+    private bool isLoading = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -987,6 +994,10 @@
     {
         try
         {
+            isLoading = true;
+            errorMessage = "";
+            StateHasChanged();
+
             // Load suppliers from database
             var dbSuppliers = await SupplierService.GetSuppliersAsync();
             suppliers = dbSuppliers.Where(s => s.is_active).Select(s => new SupplierDisplay
@@ -1018,9 +1029,11 @@
         catch (Exception ex)
         {
             errorMessage = $"Error loading data: {ex.Message}";
+            Console.WriteLine($"Error in LoadData: {ex}");
         }
         finally
         {
+            isLoading = false;
             StateHasChanged();
         }
     }
@@ -1030,40 +1043,95 @@
         try
         {
             var dbPOs = await PurchaseOrderService.GetAllPurchaseOrdersAsync();
-            purchaseOrderHistory = new List<PurchaseOrderDisplay>();
             
-            foreach (var po in dbPOs)
+            // Get item counts in a single query for better performance
+            var itemCountsDict = await GetItemCountsForAllPOsAsync(dbPOs.Select(po => po.po_id).ToList());
+            
+            purchaseOrderHistory = dbPOs.Select(po => new PurchaseOrderDisplay
             {
-                // Get item count for this PO
-                var items = await PurchaseOrderService.GetPurchaseOrderItemsAsync(po.po_id);
-                
-                purchaseOrderHistory.Add(new PurchaseOrderDisplay
-                {
-                    POId = po.po_id,
-                    PONumber = po.po_number ?? "",
-                    SupplierName = po.supplier_name ?? "",
-                    SupplierEmail = "", // Can be loaded if needed
-                    DateOrdered = po.order_date,
-                    ExpectedDate = po.expected_date,
-                    TotalItems = items?.Count ?? 0,
-                    Subtotal = po.subtotal,
-                    TaxAmount = po.tax_amount,
-                    TotalAmount = po.total_amount,
-                    Status = po.status ?? "Pending"
-                });
-            }
-            // Sort by PO ID in ascending order
-            purchaseOrderHistory = purchaseOrderHistory.OrderBy(po => po.POId).ToList();
+                POId = po.po_id,
+                PONumber = po.po_number ?? "",
+                SupplierName = po.supplier_name ?? "",
+                SupplierEmail = "", // Can be loaded if needed
+                DateOrdered = po.order_date,
+                ExpectedDate = po.expected_date,
+                TotalItems = itemCountsDict.ContainsKey(po.po_id) ? itemCountsDict[po.po_id] : 0,
+                Subtotal = po.subtotal,
+                TaxAmount = po.tax_amount,
+                TotalAmount = po.total_amount,
+                Status = po.status ?? "Pending"
+            })
+            .OrderByDescending(po => po.DateOrdered)
+            .ThenByDescending(po => po.POId)
+            .ToList();
         }
         catch (Exception ex)
         {
             errorMessage = $"Error loading purchase orders: {ex.Message}";
             Console.WriteLine($"Error loading POs: {ex}");
-        }
-        finally
-        {
+            purchaseOrderHistory = new List<PurchaseOrderDisplay>();
             StateHasChanged();
         }
+    }
+
+    // Helper method to get item counts for all POs in one query (much faster)
+    private async Task<Dictionary<int, int>> GetItemCountsForAllPOsAsync(List<int> poIds)
+    {
+        var counts = new Dictionary<int, int>();
+        
+        if (poIds == null || poIds.Count == 0)
+            return counts;
+
+        try
+        {
+            using var connection = db.GetConnection();
+            await connection.OpenAsync();
+
+            // Use parameterized query for safety and build IN clause
+            var parameters = new List<string>();
+            var command = new SqlCommand();
+            command.Connection = connection;
+            
+            for (int i = 0; i < poIds.Count; i++)
+            {
+                var paramName = $"@poId{i}";
+                parameters.Add(paramName);
+                command.Parameters.AddWithValue(paramName, poIds[i]);
+            }
+            
+            if (parameters.Count > 0)
+            {
+                var paramList = string.Join(",", parameters);
+                command.CommandText = @"SELECT po_id, COUNT(*) as item_count
+                    FROM tbl_purchase_order_items
+                    WHERE po_id IN (" + paramList + @")
+                    GROUP BY po_id";
+
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    int poId = reader.GetInt32(0);
+                    int itemCount = reader.GetInt32(1);
+                    counts[poId] = itemCount;
+                }
+            }
+
+            // Set 0 for POs that have no items
+            foreach (var poId in poIds)
+            {
+                if (!counts.ContainsKey(poId))
+                {
+                    counts[poId] = 0;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error getting item counts: {ex.Message}");
+            // Return empty dictionary, item counts will be 0
+        }
+
+        return counts;
     }
 
     private void ShowPurchaseOrderModal()

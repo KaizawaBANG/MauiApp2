@@ -35,20 +35,42 @@
 
         </a>
 
-        <!-- Sale Transaction - Visible for Cashier and Administrator -->
+        <!-- Sales Section - Visible for Cashier and Administrator -->
         @if (CanAccessSales())
         {
-            <a href="/sale-transaction" class="nav-item @GetNavItemClass("/sale-transaction")">
-                <span class="nav-icon"><i class="fas fa-receipt"></i></span>
-                <span class="nav-text">Sale Transaction</span>
-            </a>
+            <div class="nav-section">
+                <div class="nav-item nav-section-header @GetNavItemClass("/sale-transaction", "/sales-history", "/customers")" @onclick="ToggleSalesMenu">
+                    <span class="nav-icon"><i class="fas fa-shopping-cart"></i></span>
+                    <span class="nav-text">Sales</span>
+                    <span class="nav-arrow">
+                        <i class="fas fa-chevron-down @(isSalesMenuOpen ? "open" : "")"></i>
+                    </span>
+                </div>
+                @if (isSalesMenuOpen)
+                {
+                    <div class="nav-submenu">
+                        <a href="/sale-transaction" class="nav-subitem @GetNavItemClass("/sale-transaction")">
+                            <span class="nav-subicon"><i class="fas fa-receipt"></i></span>
+                            <span class="nav-subtext">Sale Transaction</span>
+                        </a>
+                        <a href="/sales-history" class="nav-subitem @GetNavItemClass("/sales-history")">
+                            <span class="nav-subicon"><i class="fas fa-history"></i></span>
+                            <span class="nav-subtext">Sales History</span>
+                        </a>
+                        <a href="/customers" class="nav-subitem @GetNavItemClass("/customers")">
+                            <span class="nav-subicon"><i class="fas fa-users"></i></span>
+                            <span class="nav-subtext">Customer</span>
+                        </a>
+                    </div>
+                }
+            </div>
         }
 
         <!-- Inventory Management - Only visible for Inventory Manager or Administrator -->
         @if (CanAccessInventory())
         {
             <div class="nav-section">
-                <div class="nav-item nav-section-header @GetNavItemClass("/products", "/purchase-orders", "/stockin", "/categories", "/brands", "/taxes", "/suppliers", "/inventory-transactions")" @onclick="ToggleInventoryMenu">
+                <div class="nav-item nav-section-header @GetNavItemClass("/products", "/purchase-orders", "/stockin", "/stockout", "/categories", "/brands", "/taxes", "/suppliers", "/inventory-transactions")" @onclick="ToggleInventoryMenu">
                     <span class="nav-icon"><i class="fas fa-boxes"></i></span>
                     <span class="nav-text">Inventory Management</span>
                     <span class="nav-arrow">
@@ -96,13 +118,9 @@
                         <div class="nav-category-header">
                             <span class="nav-category-text">Stock Operations</span>
                         </div>
-                        <a href="/stockin" class="nav-subitem @GetNavItemClass("/stockin")">
-                            <span class="nav-subicon"><i class="fas fa-box-open"></i></span>
-                            <span class="nav-subtext">Stock In</span>
-                        </a>
                         <a href="/inventory-transactions" class="nav-subitem @GetNavItemClass("/inventory-transactions")">
                             <span class="nav-subicon"><i class="fas fa-exchange-alt"></i></span>
-                            <span class="nav-subtext">Inventory Transactions</span>
+                            <span class="nav-subtext">Stock Movements</span>
                         </a>
                     </div>
                 }
@@ -271,6 +289,7 @@
     private bool showUserMenu = false;
 
     private bool isInventoryMenuOpen = false;
+    private bool isSalesMenuOpen = false;
     private bool isReportsMenuOpen = false;
     private bool isAccountingMenuOpen = false;
     private bool isSystemMenuOpen = false;
@@ -348,12 +367,24 @@
     private void SetMenuStates()
 
     {
+        // Keep Sales menu open if on any sales pages (only if user has access)
+        if (CanAccessSales())
+        {
+            if (currentUri.Contains("/sale-transaction") ||
+                currentUri.Contains("/sales-history") ||
+                currentUri.Contains("/customers"))
+            {
+                isSalesMenuOpen = true;
+            }
+        }
+
         // Keep Inventory Management menu open if on any inventory pages (only if user has access)
         if (CanAccessInventory())
         {
             if (currentUri.Contains("/products") ||
                 currentUri.Contains("/purchase-orders") ||
                 currentUri.Contains("/stockin") ||
+                currentUri.Contains("/stockout") ||
                 currentUri.Contains("/categories") ||
                 currentUri.Contains("/brands") ||
                 currentUri.Contains("/taxes") ||
@@ -492,6 +523,11 @@
 
         showUserMenu = !showUserMenu;
 
+    }
+
+    private void ToggleSalesMenu()
+    {
+        isSalesMenuOpen = !isSalesMenuOpen;
     }
 
     private void ToggleInventoryMenu()

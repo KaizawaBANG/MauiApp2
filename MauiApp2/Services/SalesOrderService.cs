@@ -9,7 +9,7 @@ namespace MauiApp2.Services
 {
     public interface ISalesOrderService
     {
-        Task<int> CreateSalesOrderAsync(DateTime salesDate, string paymentMethod, List<SalesOrderItem> items, int userId);
+        Task<int> CreateSalesOrderAsync(DateTime salesDate, string paymentMethod, List<SalesOrderItem> items, int userId, int? customerId = null);
         Task<List<SalesOrder>> GetAllSalesOrdersAsync();
         Task<SalesOrder> GetSalesOrderByIdAsync(int salesOrderId);
         Task<List<SalesOrderItem>> GetSalesOrderItemsAsync(int salesOrderId);
@@ -18,14 +18,18 @@ namespace MauiApp2.Services
     public class SalesOrderService : ISalesOrderService
     {
         private readonly IStockOutService _stockOutService;
+        private readonly IAuditLogService? _auditLogService;
+        private readonly IAuthService? _authService;
 
-        public SalesOrderService(IStockOutService stockOutService)
+        public SalesOrderService(IStockOutService stockOutService, IAuditLogService? auditLogService = null, IAuthService? authService = null)
         {
             _stockOutService = stockOutService;
+            _auditLogService = auditLogService;
+            _authService = authService;
         }
 
         // Create Sales Order and automatically create Stock Out
-        public async Task<int> CreateSalesOrderAsync(DateTime salesDate, string paymentMethod, List<SalesOrderItem> items, int userId)
+        public async Task<int> CreateSalesOrderAsync(DateTime salesDate, string paymentMethod, List<SalesOrderItem> items, int userId, int? customerId = null)
         {
             using var connection = db.GetConnection();
             await connection.OpenAsync();
@@ -82,7 +86,7 @@ namespace MauiApp2.Services
                 }
 
                 // Step 3: Create Sales Order header
-                var salesOrderId = await CreateSalesOrderHeaderAsync(connection, transaction, salesOrderNumber, salesDate, subtotal, totalTax, totalAmount, paymentMethod, userId);
+                var salesOrderId = await CreateSalesOrderHeaderAsync(connection, transaction, salesOrderNumber, salesDate, subtotal, totalTax, totalAmount, paymentMethod, userId, customerId);
 
                 // Step 4: Create Sales Order items and reduce inventory
                 foreach (var item in items)
@@ -108,6 +112,22 @@ namespace MauiApp2.Services
 
                 // Commit transaction
                 transaction.Commit();
+
+                // Log audit action
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    await _auditLogService.LogActionAsync(
+                        userId,
+                        "Create",
+                        "tbl_sales_order",
+                        salesOrderId,
+                        null,
+                        new { sales_order_number = salesOrderNumber, sales_date = salesDate, payment_method = paymentMethod, customer_id = customerId, total_amount = totalAmount, item_count = items.Count },
+                        null,
+                        null,
+                        $"created sales order: {salesOrderNumber}"
+                    );
+                }
 
                 return salesOrderId;
             }
@@ -242,11 +262,11 @@ namespace MauiApp2.Services
         }
 
         // Create Sales Order header
-        private async Task<int> CreateSalesOrderHeaderAsync(SqlConnection connection, SqlTransaction transaction, string salesOrderNumber, DateTime salesDate, decimal subtotal, decimal taxAmount, decimal totalAmount, string paymentMethod, int userId)
+        private async Task<int> CreateSalesOrderHeaderAsync(SqlConnection connection, SqlTransaction transaction, string salesOrderNumber, DateTime salesDate, decimal subtotal, decimal taxAmount, decimal totalAmount, string paymentMethod, int userId, int? customerId = null)
         {
             var command = new SqlCommand(@"
-                INSERT INTO tbl_sales_order (sales_order_number, sales_date, subtotal, tax_amount, total_amount, payment_method, processed_by, created_date)
-                VALUES (@sales_order_number, @sales_date, @subtotal, @tax_amount, @total_amount, @payment_method, @processed_by, @created_date);
+                INSERT INTO tbl_sales_order (sales_order_number, sales_date, subtotal, tax_amount, total_amount, payment_method, customer_id, processed_by, created_date)
+                VALUES (@sales_order_number, @sales_date, @subtotal, @tax_amount, @total_amount, @payment_method, @customer_id, @processed_by, @created_date);
                 SELECT SCOPE_IDENTITY();", connection, transaction);
 
             command.Parameters.AddWithValue("@sales_order_number", salesOrderNumber);
@@ -255,6 +275,7 @@ namespace MauiApp2.Services
             command.Parameters.AddWithValue("@tax_amount", taxAmount);
             command.Parameters.AddWithValue("@total_amount", totalAmount);
             command.Parameters.AddWithValue("@payment_method", paymentMethod);
+            command.Parameters.AddWithValue("@customer_id", customerId.HasValue ? (object)customerId.Value : DBNull.Value);
             command.Parameters.AddWithValue("@processed_by", userId);
             command.Parameters.AddWithValue("@created_date", DateTime.Now);
 
@@ -309,11 +330,13 @@ namespace MauiApp2.Services
 
                 var command = new SqlCommand(@"
                     SELECT so.sales_order_id, so.sales_order_number, so.sales_date, so.subtotal, so.tax_amount, 
-                           so.total_amount, so.payment_method, so.processed_by, so.created_date,
+                           so.total_amount, so.payment_method, so.customer_id, so.processed_by, so.created_date,
                            u.full_name,
+                           c.customer_name, c.contact_number, c.email, c.address,
                            (SELECT COUNT(*) FROM tbl_sales_order_items WHERE sales_order_id = so.sales_order_id) as item_count
                     FROM tbl_sales_order so
                     LEFT JOIN tbl_users u ON so.processed_by = u.user_id
+                    LEFT JOIN tbl_customer c ON so.customer_id = c.customer_id
                     ORDER BY so.sales_date DESC", connection);
 
                 using var reader = await command.ExecuteReaderAsync();
@@ -328,10 +351,15 @@ namespace MauiApp2.Services
                         tax_amount = reader.GetDecimal(4),
                         total_amount = reader.GetDecimal(5),
                         payment_method = reader.GetString(6),
-                        processed_by = reader.GetInt32(7),
-                        created_date = reader.GetDateTime(8),
-                        processed_by_name = reader.IsDBNull(9) ? null : reader.GetString(9),
-                        item_count = reader.IsDBNull(10) ? null : reader.GetInt32(10)
+                        customer_id = reader.IsDBNull(7) ? null : reader.GetInt32(7),
+                        processed_by = reader.GetInt32(8),
+                        created_date = reader.GetDateTime(9),
+                        processed_by_name = reader.IsDBNull(10) ? null : reader.GetString(10),
+                        customer_name = reader.IsDBNull(11) ? null : reader.GetString(11),
+                        customer_contact = reader.IsDBNull(12) ? null : reader.GetString(12),
+                        customer_email = reader.IsDBNull(13) ? null : reader.GetString(13),
+                        customer_address = reader.IsDBNull(14) ? null : reader.GetString(14),
+                        item_count = reader.IsDBNull(15) ? null : reader.GetInt32(15)
                     });
                 }
             }
@@ -351,11 +379,13 @@ namespace MauiApp2.Services
 
             var command = new SqlCommand(@"
                 SELECT so.sales_order_id, so.sales_order_number, so.sales_date, so.subtotal, so.tax_amount, 
-                       so.total_amount, so.payment_method, so.processed_by, so.created_date,
+                       so.total_amount, so.payment_method, so.customer_id, so.processed_by, so.created_date,
                        u.full_name,
+                       c.customer_name, c.contact_number, c.email, c.address,
                        (SELECT COUNT(*) FROM tbl_sales_order_items WHERE sales_order_id = so.sales_order_id) as item_count
                 FROM tbl_sales_order so
                 LEFT JOIN tbl_users u ON so.processed_by = u.user_id
+                LEFT JOIN tbl_customer c ON so.customer_id = c.customer_id
                 WHERE so.sales_order_id = @sales_order_id", connection);
 
             command.Parameters.AddWithValue("@sales_order_id", salesOrderId);
@@ -372,10 +402,15 @@ namespace MauiApp2.Services
                     tax_amount = reader.GetDecimal(4),
                     total_amount = reader.GetDecimal(5),
                     payment_method = reader.GetString(6),
-                    processed_by = reader.GetInt32(7),
-                    created_date = reader.GetDateTime(8),
-                    processed_by_name = reader.IsDBNull(9) ? null : reader.GetString(9),
-                    item_count = reader.IsDBNull(10) ? null : reader.GetInt32(10)
+                    customer_id = reader.IsDBNull(7) ? null : reader.GetInt32(7),
+                    processed_by = reader.GetInt32(8),
+                    created_date = reader.GetDateTime(9),
+                    processed_by_name = reader.IsDBNull(10) ? null : reader.GetString(10),
+                    customer_name = reader.IsDBNull(11) ? null : reader.GetString(11),
+                    customer_contact = reader.IsDBNull(12) ? null : reader.GetString(12),
+                    customer_email = reader.IsDBNull(13) ? null : reader.GetString(13),
+                    customer_address = reader.IsDBNull(14) ? null : reader.GetString(14),
+                    item_count = reader.IsDBNull(15) ? null : reader.GetInt32(15)
                 };
             }
 

@@ -22,6 +22,13 @@ namespace MauiApp2.Services
 
     public class AuthService : IAuthService
     {
+        private readonly IAuditLogService? _auditLogService;
+
+        public AuthService(IAuditLogService? auditLogService = null)
+        {
+            _auditLogService = auditLogService;
+        }
+
         public bool IsAuthenticated { get; private set; }
         public string CurrentUser { get; private set; } = string.Empty;
         public int CurrentUserId { get; private set; }
@@ -76,7 +83,24 @@ namespace MauiApp2.Services
                         CurrentUserName = fullName;
                         CurrentUserRoleId = roleId;
                         CurrentUserRoleName = roleName;
+                        
+                        // Log successful login
+                        if (_auditLogService != null)
+                        {
+                            await _auditLogService.LogActionAsync(userId, "Login", null, null, null, 
+                                new { username = dbUsername, email = dbEmail, role = roleName }, null, null, $"logged in: {dbUsername}");
+                        }
+                        
                         return true;
+                    }
+                    else
+                    {
+                        // Log failed login attempt (if we can identify the user)
+                        if (_auditLogService != null && userId > 0)
+                        {
+                            await _auditLogService.LogActionAsync(userId, "Login Failed", null, null, null, 
+                                new { username = dbUsername, reason = "Invalid password" }, null, null, $"login failed: {dbUsername}");
+                        }
                     }
                 }
 
@@ -99,15 +123,24 @@ namespace MauiApp2.Services
             }
         }
 
-        public Task LogoutAsync()
+        public async Task LogoutAsync()
         {
+            int userId = CurrentUserId;
+            string username = CurrentUser;
+            
             IsAuthenticated = false;
             CurrentUser = string.Empty;
             CurrentUserId = 0;
             CurrentUserName = string.Empty;
             CurrentUserRoleId = 0;
             CurrentUserRoleName = string.Empty;
-            return Task.CompletedTask;
+            
+            // Log logout
+            if (_auditLogService != null && userId > 0)
+            {
+                await _auditLogService.LogActionAsync(userId, "Logout", null, null, null, 
+                    new { username = username }, null, null, $"logged out: {username}");
+            }
         }
 
         // Hash password using SHA256

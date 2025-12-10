@@ -28,23 +28,12 @@
 
     <div class="main-content">
 
-        <div class="content-header">
-
+        <div class="content-header" style="flex-direction: column; align-items: flex-start;">
             <h1>Tax Management</h1>
-
+            <p style="color: #6b7280; margin-top: 4px; margin-bottom: 0;">Configure and manage tax rates for products and transactions</p>
         </div>
 
         <div class="inventory-section">
-
-            <div class="tab-section">
-
-                <div class="tabs">
-
-                    <button class="tab active">Tax List</button>
-
-                </div>
-
-            </div>
 
             <div class="product-table-container">
 
@@ -852,8 +841,8 @@
 
                     (t.tax_rate * 100).ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
 
-            // Sort by tax_id in ascending order
-            return result.OrderBy(t => t.tax_id);
+            // Sort by created_date descending (latest first)
+            return result.OrderByDescending(t => t.created_date).ThenBy(t => t.tax_id);
 
         }
 

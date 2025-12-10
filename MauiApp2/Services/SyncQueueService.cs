@@ -49,7 +49,7 @@ namespace MauiApp2.Services
                            sync_status, error_message, retry_count, created_date, synced_date
                     FROM tbl_sync_queue
                     WHERE sync_status = 'Pending'
-                    ORDER BY created_date ASC";
+                    ORDER BY created_date DESC";
 
                 if (limit.HasValue)
                 {

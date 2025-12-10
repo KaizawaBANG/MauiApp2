@@ -17,8 +17,13 @@ namespace MauiApp2.Services
 
     public class StockInService : IStockInService
     {
-        public StockInService()
+        private readonly IAuditLogService? _auditLogService;
+        private readonly IAuthService? _authService;
+
+        public StockInService(IAuditLogService? auditLogService = null, IAuthService? authService = null)
         {
+            _auditLogService = auditLogService;
+            _authService = authService;
         }
 
         // Receive stock from Purchase Order - simple, one method does everything
@@ -32,15 +37,30 @@ namespace MauiApp2.Services
             {
                 // Step 1: Get Purchase Order details within transaction
                 var getPOCommand = new SqlCommand(@"
-                    SELECT supplier_id FROM tbl_purchase_order WHERE po_id = @po_id", connection, transaction);
+                    SELECT supplier_id, po_number FROM tbl_purchase_order WHERE po_id = @po_id", connection, transaction);
                 getPOCommand.Parameters.AddWithValue("@po_id", poId);
                 
-                var supplierIdResult = await getPOCommand.ExecuteScalarAsync();
-                if (supplierIdResult == null || supplierIdResult == DBNull.Value)
+                string? poNumber = null;
+                int supplierId = 0;
+                using (var reader = await getPOCommand.ExecuteReaderAsync())
                 {
-                    throw new Exception("Purchase order not found");
+                    if (await reader.ReadAsync())
+                    {
+                        int supplierIdOrdinal = reader.GetOrdinal("supplier_id");
+                        int poNumberOrdinal = reader.GetOrdinal("po_number");
+                        
+                        if (reader.IsDBNull(supplierIdOrdinal))
+                        {
+                            throw new Exception("Purchase order not found");
+                        }
+                        supplierId = reader.GetInt32(supplierIdOrdinal);
+                        poNumber = reader.IsDBNull(poNumberOrdinal) ? null : reader.GetString(poNumberOrdinal);
+                    }
+                    else
+                    {
+                        throw new Exception("Purchase order not found");
+                    }
                 }
-                int supplierId = Convert.ToInt32(supplierIdResult);
 
                 // Step 2: Generate Stock In Number
                 string stockInNumber = await GenerateStockInNumberAsync(connection, transaction);
@@ -48,30 +68,42 @@ namespace MauiApp2.Services
                 // Step 3: Create Stock In header
                 var stockInId = await CreateStockInHeaderAsync(connection, transaction, poId, supplierId, stockInNumber, notes, userId);
 
-                // Step 4: Create Stock In items and update inventory
+                // Step 4: Check if rejected columns exist (once, outside the loop)
+                bool hasRejectedColumns = await ColumnExistsAsync(connection, transaction, "tbl_stock_in_items", "quantity_rejected");
+                
+                // Step 5: Create Stock In items and update inventory
                 foreach (var item in items)
                 {
-                    // Insert stock in item
+                    // Skip items where both received and rejected are 0 (nothing to record)
+                    if (item.quantity_received == 0 && (!hasRejectedColumns || item.quantity_rejected == 0))
+                    {
+                        continue;
+                    }
+
+                    // Insert stock in item (even if quantity_received is 0, if there are rejected items)
                     await CreateStockInItemAsync(connection, transaction, stockInId, item);
 
-                    // Update product inventory (quantity increases)
-                    await UpdateProductInventoryAsync(connection, transaction, item.product_id, item.quantity_received, item.unit_cost);
+                    // Update product inventory only if quantity_received > 0
+                    if (item.quantity_received > 0)
+                    {
+                        await UpdateProductInventoryAsync(connection, transaction, item.product_id, item.quantity_received, item.unit_cost);
+                    }
                 }
 
-                // Step 5: Calculate total cost for Accounts Payable
+                // Step 6: Calculate total cost for Accounts Payable
                 decimal totalCost = 0;
                 foreach (var item in items)
                 {
                     totalCost += item.quantity_received * item.unit_cost;
                 }
 
-                // Step 6: Create Accounts Payable record
+                // Step 7: Create Accounts Payable record
                 await CreateAccountsPayableAsync(connection, transaction, poId, supplierId, totalCost);
 
-                // Step 7: Create automatic accounting ledger entries
+                // Step 8: Create automatic accounting ledger entries
                 await CreateStockInLedgerEntriesAsync(connection, transaction, stockInId, stockInNumber, totalCost, items, userId);
 
-                // Step 8: Update PO status to "Received"
+                // Step 9: Update PO status to "Received"
                 var updatePOCommand = new SqlCommand(@"
                     UPDATE tbl_purchase_order 
                     SET status = @status, modified_date = @modified_date
@@ -83,6 +115,23 @@ namespace MauiApp2.Services
 
                 // Commit transaction
                 transaction.Commit();
+
+                // Log audit action
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    string poNumberDisplay = poNumber ?? $"PO ID {poId}";
+                    await _auditLogService.LogActionAsync(
+                        userId,
+                        "Create",
+                        "tbl_stock_in",
+                        stockInId,
+                        null,
+                        new { stock_in_number = stockInNumber, po_id = poId, supplier_id = supplierId, total_cost = totalCost, item_count = items.Count },
+                        null,
+                        null,
+                        $"received stock from purchase order: {poNumberDisplay}"
+                    );
+                }
 
                 return stockInId;
             }
@@ -353,7 +402,7 @@ namespace MauiApp2.Services
                 var command = new SqlCommand($@"
                     SELECT {selectColumns}
                     FROM tbl_stock_in_items sii
-                    INNER JOIN tbl_product p ON sii.product_id = p.product_id
+                    LEFT JOIN tbl_product p ON sii.product_id = p.product_id
                     WHERE sii.stock_in_id = @stock_in_id
                     ORDER BY sii.stock_in_items_id", connection);
 
@@ -362,46 +411,42 @@ namespace MauiApp2.Services
                 using var reader = await command.ExecuteReaderAsync();
                 while (await reader.ReadAsync())
                 {
-                    int index = 0;
                     var item = new StockInItem
                     {
-                        stock_in_items_id = reader.GetInt32(index++),
-                        stock_in_id = reader.GetInt32(index++),
-                        product_id = reader.GetInt32(index++),
-                        quantity_received = reader.GetInt32(index++),
-                        unit_cost = reader.GetDecimal(index++),
-                        created_date = reader.GetDateTime(index++)
+                        stock_in_items_id = reader.GetInt32(reader.GetOrdinal("stock_in_items_id")),
+                        stock_in_id = reader.GetInt32(reader.GetOrdinal("stock_in_id")),
+                        product_id = reader.GetInt32(reader.GetOrdinal("product_id")),
+                        quantity_received = reader.GetInt32(reader.GetOrdinal("quantity_received")),
+                        unit_cost = reader.GetDecimal(reader.GetOrdinal("unit_cost")),
+                        created_date = reader.GetDateTime(reader.GetOrdinal("created_date"))
                     };
 
                     if (hasQuantityRejected)
                     {
-                        item.quantity_rejected = reader.IsDBNull(index) ? 0 : reader.GetInt32(index++);
+                        int qtyRejectedOrdinal = reader.GetOrdinal("quantity_rejected");
+                        item.quantity_rejected = reader.IsDBNull(qtyRejectedOrdinal) ? 0 : reader.GetInt32(qtyRejectedOrdinal);
                     }
                     else
                     {
-                        index++; // Skip the 0 placeholder
+                        item.quantity_rejected = 0;
                     }
 
                     if (hasRejectionReason)
                     {
-                        item.rejection_reason = reader.IsDBNull(index) ? null : reader.GetString(index++);
-                    }
-                    else
-                    {
-                        index++; // Skip the NULL placeholder
+                        int reasonOrdinal = reader.GetOrdinal("rejection_reason");
+                        item.rejection_reason = reader.IsDBNull(reasonOrdinal) ? null : reader.GetString(reasonOrdinal);
                     }
 
                     if (hasRejectionRemarks)
                     {
-                        item.rejection_remarks = reader.IsDBNull(index) ? null : reader.GetString(index++);
-                    }
-                    else
-                    {
-                        index++; // Skip the NULL placeholder
+                        int remarksOrdinal = reader.GetOrdinal("rejection_remarks");
+                        item.rejection_remarks = reader.IsDBNull(remarksOrdinal) ? null : reader.GetString(remarksOrdinal);
                     }
 
-                    item.product_name = reader.IsDBNull(index) ? null : reader.GetString(index++);
-                    item.product_sku = reader.IsDBNull(index) ? null : reader.GetString(index++);
+                    int productNameOrdinal = reader.GetOrdinal("product_name");
+                    int productSkuOrdinal = reader.GetOrdinal("product_sku");
+                    item.product_name = reader.IsDBNull(productNameOrdinal) ? null : reader.GetString(productNameOrdinal);
+                    item.product_sku = reader.IsDBNull(productSkuOrdinal) ? null : reader.GetString(productSkuOrdinal);
 
                     items.Add(item);
                 }

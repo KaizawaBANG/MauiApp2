@@ -18,6 +18,15 @@ namespace MauiApp2.Services
 
     public class TaxService : ITaxService
     {
+        private readonly IAuditLogService? _auditLogService;
+        private readonly IAuthService? _authService;
+
+        public TaxService(IAuditLogService? auditLogService = null, IAuthService? authService = null)
+        {
+            _auditLogService = auditLogService;
+            _authService = authService;
+        }
+
         // READ - Get all taxes
         public async Task<List<Tax>> GetTaxesAsync()
         {
@@ -84,7 +93,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@created_date", tax.created_date != default(DateTime) ? tax.created_date : DateTime.Now);
 
                 var result = await command.ExecuteScalarAsync();
-                return Convert.ToInt32(result);
+                var taxId = Convert.ToInt32(result);
+
+                // Log audit action
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Create",
+                        "tbl_tax",
+                        taxId,
+                        null,
+                        new { tax_name = tax.tax_name, tax_type = tax.tax_type, tax_rate = tax.tax_rate, is_active = tax.is_active },
+                        null,
+                        null,
+                        $"added new tax: {tax.tax_name}"
+                    );
+                }
+
+                return taxId;
             }
             catch (SqlException ex)
             {
@@ -101,6 +128,13 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get old values for audit log
+                Tax? oldTax = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    oldTax = await GetTaxByIdAsync(tax.tax_id);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
@@ -118,7 +152,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@tax_rate", tax.tax_rate);
                 command.Parameters.AddWithValue("@is_active", tax.is_active);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                var success = await command.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && oldTax != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Update",
+                        "tbl_tax",
+                        tax.tax_id,
+                        new { tax_name = oldTax.tax_name, tax_type = oldTax.tax_type, tax_rate = oldTax.tax_rate, is_active = oldTax.is_active },
+                        new { tax_name = tax.tax_name, tax_type = tax.tax_type, tax_rate = tax.tax_rate, is_active = tax.is_active },
+                        null,
+                        null,
+                        $"updated tax: {tax.tax_name}"
+                    );
+                }
+
+                return success;
             }
             catch (Exception ex)
             {
@@ -131,13 +183,38 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get tax details for audit log before deletion
+                Tax? taxToDelete = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    taxToDelete = await GetTaxByIdAsync(taxId);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
                 var deleteCommand = new SqlCommand("DELETE FROM tbl_tax WHERE tax_id = @tax_id", connection);
                 deleteCommand.Parameters.AddWithValue("@tax_id", taxId);
 
-                return await deleteCommand.ExecuteNonQueryAsync() > 0;
+                var success = await deleteCommand.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && taxToDelete != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Delete",
+                        "tbl_tax",
+                        taxId,
+                        new { tax_name = taxToDelete.tax_name, tax_type = taxToDelete.tax_type, tax_rate = taxToDelete.tax_rate, is_active = taxToDelete.is_active },
+                        null,
+                        null,
+                        null,
+                        $"deleted tax: {taxToDelete.tax_name}"
+                    );
+                }
+
+                return success;
             }
             catch (Exception ex)
             {

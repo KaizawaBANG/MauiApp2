@@ -26,23 +26,12 @@
 
     <div class="main-content">
 
-        <div class="content-header">
-
+        <div class="content-header" style="flex-direction: column; align-items: flex-start;">
             <h1>Inventory Management</h1>
-
+            <p style="color: #6b7280; margin-top: 4px; margin-bottom: 0;">View and manage all products, inventory levels, and product details</p>
         </div>
 
         <div class="inventory-section">
-
-            <div class="tab-section">
-
-                <div class="tabs">
-
-                    <button class="tab active">Product List</button>
-
-                </div>
-
-            </div>
 
             <div class="product-table-container">
 
@@ -1108,6 +1097,8 @@
 
         public int? TaxId { get; set; }
 
+        public DateTime? created_date { get; set; }
+
     }
 
     protected override async Task OnInitializedAsync()
@@ -1252,7 +1243,9 @@
 
                     CategoryId = p.category_id,
 
-                    TaxId = p.tax_id
+                    TaxId = p.tax_id,
+
+                    created_date = p.created_date
 
                 };
 
@@ -1426,8 +1419,8 @@
 
                     p.Brand.Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
 
-            // Sort by ProductId in ascending order
-            return result.OrderBy(p => p.ProductId);
+            // Sort by created_date descending (latest first), then by ProductId
+            return result.OrderByDescending(p => p.created_date ?? DateTime.MinValue).ThenByDescending(p => p.ProductId);
 
         }
 

@@ -20,6 +20,15 @@ namespace MauiApp2.Services
 
     public class PurchaseOrderService : IPurchaseOrderService
     {
+        private readonly IAuditLogService? _auditLogService;
+        private readonly IAuthService? _authService;
+
+        public PurchaseOrderService(IAuditLogService? auditLogService = null, IAuthService? authService = null)
+        {
+            _auditLogService = auditLogService;
+            _authService = authService;
+        }
+
         // Get pending purchase orders (for Stock In)
         public async Task<List<PurchaseOrder>> GetPendingPurchaseOrdersAsync()
         {
@@ -283,6 +292,13 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get old values for audit log
+                PurchaseOrder? oldPO = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    oldPO = await GetPurchaseOrderByIdAsync(poId);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
@@ -322,7 +338,25 @@ namespace MauiApp2.Services
                     command.Parameters.AddWithValue("@cancellation_remarks", (object)cancellationRemarks ?? DBNull.Value);
                 }
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                var success = await command.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && oldPO != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Update",
+                        "tbl_purchase_order",
+                        poId,
+                        new { status = oldPO.status },
+                        new { status = status, cancellation_reason = cancellationReason, cancellation_remarks = cancellationRemarks },
+                        null,
+                        null,
+                        $"updated purchase order status: {oldPO.po_number} to {status}"
+                    );
+                }
+
+                return success;
             }
             catch (Exception ex)
             {
@@ -575,6 +609,22 @@ namespace MauiApp2.Services
 
                 // Commit transaction
                 transaction.Commit();
+
+                // Log audit action
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Create",
+                        "tbl_purchase_order",
+                        poId,
+                        null,
+                        new { po_number = poNumber, supplier_id = supplierId, order_date = orderDate, expected_date = expectedDate, status = "Pending", total_amount = totalAmount, item_count = items.Count },
+                        null,
+                        null,
+                        $"created purchase order: {poNumber}"
+                    );
+                }
 
                 return poId;
             }

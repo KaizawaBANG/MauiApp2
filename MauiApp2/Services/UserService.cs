@@ -24,6 +24,15 @@ namespace MauiApp2.Services
 
     public class UserService : IUserService
     {
+        private readonly IAuditLogService? _auditLogService;
+        private readonly IAuthService? _authService;
+
+        public UserService(IAuditLogService? auditLogService = null, IAuthService? authService = null)
+        {
+            _auditLogService = auditLogService;
+            _authService = authService;
+        }
+
         // READ - Get all users with role names
         public async Task<List<User>> GetUsersAsync()
         {
@@ -38,7 +47,7 @@ namespace MauiApp2.Services
                     SELECT u.user_id, u.role_id, u.username, u.email, u.password_hash, 
                            u.full_name, u.is_active, u.last_login, u.created_date 
                     FROM tbl_users u 
-                    ORDER BY u.full_name", connection);
+                    ORDER BY u.created_date DESC, u.user_id DESC", connection);
 
                 using var reader = await command.ExecuteReaderAsync();
                 while (await reader.ReadAsync())
@@ -99,7 +108,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@created_date", user.created_date);
 
                 var result = await command.ExecuteScalarAsync();
-                return Convert.ToInt32(result);
+                int userId = Convert.ToInt32(result);
+
+                // Log audit action
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Create",
+                        "tbl_users",
+                        userId,
+                        null,
+                        new { username = user.username, email = user.email, full_name = user.full_name, role_id = user.role_id, is_active = user.is_active },
+                        null,
+                        null,
+                        $"created user: {user.username}"
+                    );
+                }
+
+                return userId;
             }
             catch (SqlException ex)
             {
@@ -120,6 +147,20 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get old values for audit log
+                User? oldUser = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    try
+                    {
+                        oldUser = await GetUserByIdAsync(user.user_id);
+                    }
+                    catch
+                    {
+                        // If user not found, continue without old values
+                    }
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
@@ -139,7 +180,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@full_name", user.full_name);
                 command.Parameters.AddWithValue("@is_active", user.is_active);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                bool success = await command.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && oldUser != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Update",
+                        "tbl_users",
+                        user.user_id,
+                        new { username = oldUser.username, email = oldUser.email, full_name = oldUser.full_name, role_id = oldUser.role_id, is_active = oldUser.is_active },
+                        new { username = user.username, email = user.email, full_name = user.full_name, role_id = user.role_id, is_active = user.is_active },
+                        null,
+                        null,
+                        $"updated user: {user.username}"
+                    );
+                }
+
+                return success;
             }
             catch (SqlException ex)
             {
@@ -173,7 +232,31 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@user_id", userId);
                 command.Parameters.AddWithValue("@password_hash", hashedPassword);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                bool success = await command.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action (don't log password values for security)
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    // Get username for the message
+                    var getUserCommand = new SqlCommand("SELECT username FROM tbl_users WHERE user_id = @user_id", connection);
+                    getUserCommand.Parameters.AddWithValue("@user_id", userId);
+                    var usernameResult = await getUserCommand.ExecuteScalarAsync();
+                    string username = usernameResult?.ToString() ?? $"User ID {userId}";
+                    
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Update Password",
+                        "tbl_users",
+                        userId,
+                        null,
+                        new { action = "Password changed" },
+                        null,
+                        null,
+                        $"updated password for user: {username}"
+                    );
+                }
+
+                return success;
             }
             catch (Exception ex)
             {
@@ -186,13 +269,45 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get user details for audit log before deletion
+                User? userToDelete = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    try
+                    {
+                        userToDelete = await GetUserByIdAsync(userId);
+                    }
+                    catch
+                    {
+                        // If user not found, continue without user details
+                    }
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
                 var deleteCommand = new SqlCommand("DELETE FROM tbl_users WHERE user_id = @user_id", connection);
                 deleteCommand.Parameters.AddWithValue("@user_id", userId);
 
-                return await deleteCommand.ExecuteNonQueryAsync() > 0;
+                bool success = await deleteCommand.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && userToDelete != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Delete",
+                        "tbl_users",
+                        userId,
+                        new { username = userToDelete.username, email = userToDelete.email, full_name = userToDelete.full_name },
+                        null,
+                        null,
+                        null,
+                        $"deleted user: {userToDelete.username}"
+                    );
+                }
+
+                return success;
             }
             catch (Exception ex)
             {

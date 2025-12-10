@@ -26,23 +26,12 @@
 
     <div class="main-content">
 
-        <div class="content-header">
-
+        <div class="content-header" style="flex-direction: column; align-items: flex-start;">
             <h1>Brand Management</h1>
-
+            <p style="color: #6b7280; margin-top: 4px; margin-bottom: 0;">Manage product brands and manufacturers</p>
         </div>
 
         <div class="inventory-section">
-
-            <div class="tab-section">
-
-                <div class="tabs">
-
-                    <button class="tab active">Brand List</button>
-
-                </div>
-
-            </div>
 
             <div class="product-table-container">
 
@@ -757,8 +746,8 @@
             }
             else
             {
-                // Sort by brand_id in ascending order
-                brands = loadedBrands.OrderBy(b => b.brand_id).ToList();
+                // Sort by brand_id descending (latest first)
+                brands = loadedBrands.OrderByDescending(b => b.brand_id).ToList();
             }
 
         }
@@ -807,8 +796,8 @@
 
                     b.brand_id.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
 
-            // Sort by brand_id in ascending order
-            return result.OrderBy(b => b.brand_id);
+            // Sort by brand_id descending (latest first)
+            return result.OrderByDescending(b => b.brand_id);
 
         }
 

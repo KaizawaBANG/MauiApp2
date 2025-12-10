@@ -16,8 +16,11 @@ public static class MauiProgram
 
         builder.Services.AddMauiBlazorWebView();
 
-        // Register AuthService
+        // Register AuthService and AuditLogService
         builder.Services.AddSingleton<IAuthService, AuthService>();
+        builder.Services.AddScoped<IAuditLogService, AuditLogService>();
+        
+        // Register Services (with audit logging support)
         builder.Services.AddScoped<IBrandService, BrandService>();
         builder.Services.AddScoped<ICategoryService, CategoryService>();
         builder.Services.AddScoped<IProductService, ProductService>();
@@ -25,6 +28,7 @@ public static class MauiProgram
         builder.Services.AddScoped<IRoleService, RoleService>();
         builder.Services.AddScoped<ITaxService, TaxService>();
         builder.Services.AddScoped<ISupplierService, SupplierService>();
+        builder.Services.AddScoped<ICustomerService, CustomerService>();
         builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
         builder.Services.AddScoped<IStockInService, StockInService>();
         builder.Services.AddScoped<IStockOutService, StockOutService>();

@@ -5,6 +5,7 @@
 @using TaxModel = MauiApp2.Models.Tax
 @using CategoryModel = MauiApp2.Models.Category
 @using BrandModel = MauiApp2.Models.Brand
+@using CustomerModel = MauiApp2.Models.Customer
 @inject IAuthService AuthService
 @inject NavigationManager Navigation
 @inject IProductService ProductService
@@ -12,6 +13,7 @@
 @inject ISalesOrderService SalesOrderService
 @inject ICategoryService CategoryService
 @inject IBrandService BrandService
+@inject ICustomerService CustomerService
 
 <link href="css/pagination.css" rel="stylesheet" />
 
@@ -280,114 +282,209 @@ else
             </div>
         </div>
     </div>
-</div>
+    </div>
 
-<!-- Payment Modal -->
-@if (showPaymentModal)
-{
-    <div class="modal-overlay" @onclick:stopPropagation="true">
-        <div class="modal-content payment-modal" @onclick:stopPropagation="true">
-            <div class="modal-header">
-                <h3>Payment Information</h3>
-                <button class="modal-close" @onclick="ClosePaymentModal"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body">
-                <div class="payment-form">
-                    <div class="form-group">
-                        <label>Payment Method *</label>
-                        <select class="form-control" @bind="paymentMethod">
-                            <option value="">-- Select Payment Method --</option>
-                            <option value="Cash">Cash</option>
-                            <option value="Card">Card</option>
-                            <option value="GCash">GCash</option>
-                            <option value="PayMaya">PayMaya</option>
-                            <option value="Bank Transfer">Bank Transfer</option>
-                        </select>
-                        @if (HasError("PaymentMethod"))
+    <!-- Payment Modal -->
+    @if (showPaymentModal)
+    {
+        <div class="modal-overlay payment-modal-overlay" @onclick:stopPropagation="true">
+            <div class="modal-content payment-modal" @onclick:stopPropagation="true">
+                <div class="modal-header payment-modal-header">
+                    <h3>Complete Payment</h3>
+                    <button class="modal-close" @onclick="ClosePaymentModal"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="modal-body payment-modal-body">
+                    <div class="payment-layout">
+                    <!-- Left Panel: Customer and Payment Details -->
+                    <div class="payment-left-panel">
+                        <!-- Customer Information Section -->
+                        <div class="payment-section">
+                            <h4 class="payment-section-title">Customer Information</h4>
+                            <div class="customer-type-selection">
+                                <label class="customer-radio">
+                                    <input type="radio" name="customerType" value="walkin" checked="@(customerType == "walkin")" @onchange="@((ChangeEventArgs e) => { customerType = "walkin"; OnCustomerTypeChanged(); })" />
+                                    <span>Walk-in Customer</span>
+                                </label>
+                                @if (customerType == "walkin")
+                                {
+                                    <div class="customer-info-display">No customer information</div>
+                                }
+                            </div>
+                            
+                            <div class="customer-type-selection">
+                                <label class="customer-radio">
+                                    <input type="radio" name="customerType" value="existing" checked="@(customerType == "existing")" @onchange="@((ChangeEventArgs e) => { customerType = "existing"; OnCustomerTypeChanged(); })" />
+                                    <span>Existing Customer</span>
+                                </label>
+                                @if (customerType == "existing")
+                                {
+                                    <div class="customer-search-container">
+                                        <input type="text" 
+                                               class="form-control customer-search-input" 
+                                               placeholder="Search customer by name..." 
+                                               value="@customerSearchQuery" 
+                                               @oninput="OnCustomerSearchInput" />
+                                        @if (!string.IsNullOrWhiteSpace(customerSearchQuery) && filteredCustomers.Any() && SelectedCustomer == null)
+                                        {
+                                            <div class="customer-dropdown">
+                                                @foreach (var customer in filteredCustomers.Take(5))
+                                                {
+                                                    <div class="customer-dropdown-item" @onclick="() => SelectCustomer(customer)">
+                                                        <div class="customer-dropdown-name">@customer.customer_name</div>
+                                                        @if (!string.IsNullOrEmpty(customer.contact_number))
+                                                        {
+                                                            <div class="customer-dropdown-contact">@customer.contact_number</div>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        @if (SelectedCustomer != null)
+                                        {
+                                            <div class="selected-customer-info">
+                                                <div><strong>@SelectedCustomer.customer_name</strong></div>
+                                                @if (!string.IsNullOrEmpty(SelectedCustomer.contact_number))
+                                                {
+                                                    <div>@SelectedCustomer.contact_number</div>
+                                                }
+                                                @if (!string.IsNullOrEmpty(SelectedCustomer.email))
+                                                {
+                                                    <div>@SelectedCustomer.email</div>
+                                                }
+                                            </div>
+                                        }
+                                        else if (!string.IsNullOrWhiteSpace(customerSearchQuery) && !filteredCustomers.Any())
+                                        {
+                                            <div class="customer-no-results">No customer found</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            
+                            <div class="customer-type-selection">
+                                <label class="customer-radio">
+                                    <input type="radio" name="customerType" value="new" checked="@(customerType == "new")" @onchange="@((ChangeEventArgs e) => { customerType = "new"; OnCustomerTypeChanged(); })" />
+                                    <span>New Customer</span>
+                                </label>
+                                @if (customerType == "new")
+                                {
+                                    <div class="new-customer-form">
+                                        <div class="form-group">
+                                            <input type="text" class="form-control" placeholder="Customer Name *" @bind="newCustomerName" />
+                                        </div>
+                                        <div class="form-group">
+                                            <input type="text" class="form-control" placeholder="Contact Number" @bind="newCustomerContact" />
+                                        </div>
+                                        <div class="form-group">
+                                            <input type="email" class="form-control" placeholder="Email" @bind="newCustomerEmail" />
+                                        </div>
+                                        <div class="form-group">
+                                            <textarea class="form-control" placeholder="Address" rows="2" @bind="newCustomerAddress"></textarea>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Payment Method Section -->
+                        <div class="payment-section">
+                            <h4 class="payment-section-title">Payment Method *</h4>
+                            <select class="form-control payment-method-select" @bind="paymentMethod">
+                                <option value="">-- Select Payment Method --</option>
+                                <option value="Cash">Cash</option>
+                                <option value="Card">Card</option>
+                                <option value="GCash">GCash</option>
+                                <option value="PayMaya">PayMaya</option>
+                                <option value="Bank Transfer">Bank Transfer</option>
+                            </select>
+                            @if (HasError("PaymentMethod"))
+                            {
+                                <span class="field-error">Please select a payment method</span>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Right Panel: Payment Summary -->
+                    <div class="payment-right-panel">
+                        <div class="payment-summary-section">
+                            <h4 class="payment-section-title">Payment Summary</h4>
+                            <div class="payment-summary-item">
+                                <span class="summary-label">Subtotal:</span>
+                                <span class="summary-value">₱@cartSubtotal.ToString("N2")</span>
+                            </div>
+                            <div class="payment-summary-item">
+                                <span class="summary-label">VAT (12%):</span>
+                                <span class="summary-value">₱@cartTax.ToString("N2")</span>
+                            </div>
+                            <div class="payment-summary-item payment-total">
+                                <span class="summary-label">TOTAL:</span>
+                                <span class="summary-value total-amount">₱@cartTotal.ToString("N2")</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+                <div class="modal-footer payment-modal-footer">
+                    <button class="btn-cancel" @onclick="ClosePaymentModal">Cancel</button>
+                    <button class="btn-confirm-print" @onclick="ShowCompleteSaleConfirmation" 
+                            disabled="@(isSubmitting || string.IsNullOrEmpty(paymentMethod))">
+                        @if (isSubmitting)
                         {
-                            <span class="field-error">Please select a payment method</span>
+                            <span>Processing...</span>
                         }
-                    </div>
-
-                    <div class="form-group">
-                        <label>Sale Date *</label>
-                        <input type="datetime-local" class="form-control" @bind="saleDate" />
-                    </div>
-
-                    <div class="payment-summary-modal">
-                        <div class="summary-item">
-                            <span>Subtotal:</span>
-                            <span>₱@cartSubtotal.ToString("N2")</span>
-                        </div>
-                        <div class="summary-item summary-total">
-                            <span>Total Amount:</span>
-                            <span>₱@cartTotal.ToString("N2")</span>
-                        </div>
-                    </div>
+                        else
+                        {
+                            <span>Confirm</span>
+                        }
+                    </button>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn-cancel" @onclick="ClosePaymentModal">Cancel</button>
-                <button class="btn-complete-sale" @onclick="ShowCompleteSaleConfirmation" 
-                        disabled="@(isSubmitting || string.IsNullOrEmpty(paymentMethod))">
-                    @if (isSubmitting)
-                    {
-                        <span>Processing...</span>
-                    }
-                    else
-                    {
-                        <i class="fas fa-check-circle"></i>
-                        <span>Complete Sale</span>
-                    }
-                </button>
-            </div>
         </div>
-    </div>
     }
-}
 
-<!-- Confirmation Modal for Complete Sale -->
-@if (showCompleteSaleConfirmation)
-{
-    <div class="modal-overlay confirmation-modal-overlay" @onclick:stopPropagation="true">
-        <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
-            <div class="modal-header confirmation-modal-header">
-                <h3>Confirm Complete Sale</h3>
-                <button class="modal-close" @onclick="CloseCompleteSaleConfirmation"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body confirmation-modal-body">
-                <div class="confirmation-message-box">
-                    <p class="confirmation-question">Are you sure you want to complete this sale?</p>
+    <!-- Confirmation Modal for Complete Sale -->
+    @if (showCompleteSaleConfirmation)
+    {
+        <div class="modal-overlay confirmation-modal-overlay" @onclick:stopPropagation="true">
+            <div class="modal-content confirmation-modal" @onclick:stopPropagation="true">
+                <div class="modal-header confirmation-modal-header">
+                    <h3>Confirm Complete Sale</h3>
+                    <button class="modal-close" @onclick="CloseCompleteSaleConfirmation"><i class="fas fa-times"></i></button>
                 </div>
-                <div class="confirmation-details">
-                    <div class="confirmation-detail-item">
-                        <span class="confirmation-label">Total Items:</span>
-                        <span class="confirmation-value">@cartItems.Count</span>
+                <div class="modal-body confirmation-modal-body">
+                    <div class="confirmation-message-box">
+                        <p class="confirmation-question">Are you sure you want to complete this sale?</p>
                     </div>
-                    <div class="confirmation-detail-item">
-                        <span class="confirmation-label">Subtotal:</span>
-                        <span class="confirmation-value">₱@cartSubtotal.ToString("N2")</span>
-                    </div>
-                    <div class="confirmation-detail-item">
-                        <span class="confirmation-label">Total Amount:</span>
-                        <span class="confirmation-value total-amount">₱@cartTotal.ToString("N2")</span>
-                    </div>
-                    <div class="confirmation-detail-item">
-                        <span class="confirmation-label">Payment Method:</span>
-                        <span class="confirmation-value">@paymentMethod</span>
-                    </div>
-                    <div class="confirmation-detail-item">
-                        <span class="confirmation-label">Sale Date:</span>
-                        <span class="confirmation-value">@saleDate.ToString("MM/dd/yyyy")</span>
+                    <div class="confirmation-details">
+                        <div class="confirmation-detail-item">
+                            <span class="confirmation-label">Total Items:</span>
+                            <span class="confirmation-value">@cartItems.Count</span>
+                        </div>
+                        <div class="confirmation-detail-item">
+                            <span class="confirmation-label">Subtotal:</span>
+                            <span class="confirmation-value">₱@cartSubtotal.ToString("N2")</span>
+                        </div>
+                        <div class="confirmation-detail-item">
+                            <span class="confirmation-label">Total Amount:</span>
+                            <span class="confirmation-value total-amount">₱@cartTotal.ToString("N2")</span>
+                        </div>
+                        <div class="confirmation-detail-item">
+                            <span class="confirmation-label">Payment Method:</span>
+                            <span class="confirmation-value">@paymentMethod</span>
+                        </div>
+                        <div class="confirmation-detail-item">
+                            <span class="confirmation-label">Sale Date:</span>
+                            <span class="confirmation-value">@saleDate.ToString("MM/dd/yyyy")</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="modal-footer confirmation-modal-footer">
-                <button class="btn-cancel" @onclick="CloseCompleteSaleConfirmation">Cancel</button>
-                <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmCompleteSale">Confirm Sale</button>
+                <div class="modal-footer confirmation-modal-footer">
+                    <button class="btn-cancel" @onclick="CloseCompleteSaleConfirmation">Cancel</button>
+                    <button class="btn-submit confirmation-submit-btn" @onclick="ConfirmCompleteSale">Confirm Sale</button>
+                </div>
             </div>
         </div>
-    </div>
+    }
 }
 
 @code {
@@ -411,6 +508,7 @@ else
     private List<TaxModel> availableTaxes = new List<TaxModel>();
     private List<CategoryModel> availableCategories = new List<CategoryModel>();
     private List<BrandModel> availableBrands = new List<BrandModel>();
+    private List<CustomerModel> availableCustomers = new List<CustomerModel>();
 
     // Search and Filter
     private string searchQuery = "";
@@ -421,6 +519,28 @@ else
     private Dictionary<int, int> productQuantities = new Dictionary<int, int>();
     private string paymentMethod = "";
     private DateTime saleDate = DateTime.Now;
+    
+    // Customer selection
+    private string customerType = "walkin"; // "walkin", "existing", "new"
+    private int? selectedCustomerId = null;
+    private string customerSearchQuery = "";
+    private List<CustomerModel> filteredCustomers = new List<CustomerModel>();
+    private int walkInCustomerId = 1; // Walk-in customer ID (always 1)
+    
+    // Computed property for selected customer
+    private CustomerModel? SelectedCustomer => selectedCustomerId.HasValue 
+        ? availableCustomers.FirstOrDefault(c => c.customer_id == selectedCustomerId.Value) 
+        : null;
+    
+    // New customer fields
+    private string newCustomerName = "";
+    private string newCustomerContact = "";
+    private string newCustomerEmail = "";
+    private string newCustomerAddress = "";
+    
+    // Payment fields
+    private decimal amountPaid = 0;
+    private decimal change => amountPaid >= cartTotal ? amountPaid - cartTotal : 0;
 
     // Modal state
     private bool showPaymentModal = false;
@@ -464,7 +584,10 @@ else
             var taxes = await TaxService.GetTaxesAsync();
             availableTaxes = taxes.Where(t => t.is_active).ToList();
 
-            // Don't load recent sales anymore
+            // Load customers
+            var customers = await CustomerService.GetCustomersAsync();
+            availableCustomers = customers.Where(c => c.is_active).ToList();
+            filteredCustomers = availableCustomers;
         }
         catch (Exception ex)
         {
@@ -483,6 +606,21 @@ else
             
         showPaymentModal = true;
         validationErrors.Clear();
+        // Reset customer selection
+        customerType = "walkin";
+        selectedCustomerId = null;
+        customerSearchQuery = "";
+        filteredCustomers = availableCustomers;
+        newCustomerName = "";
+        newCustomerContact = "";
+        newCustomerEmail = "";
+        newCustomerAddress = "";
+        amountPaid = 0;
+        // Auto-set amount paid to total if cash payment
+        if (paymentMethod == "Cash" && cartTotal > 0)
+        {
+            amountPaid = cartTotal;
+        }
         StateHasChanged();
     }
 
@@ -490,6 +628,66 @@ else
     {
         showPaymentModal = false;
         validationErrors.Clear();
+        customerType = "walkin";
+        selectedCustomerId = null;
+        customerSearchQuery = "";
+        filteredCustomers = availableCustomers;
+        amountPaid = 0;
+        StateHasChanged();
+    }
+
+    private void OnCustomerTypeChanged()
+    {
+        selectedCustomerId = null;
+        customerSearchQuery = "";
+        filteredCustomers = availableCustomers;
+        newCustomerName = "";
+        newCustomerContact = "";
+        newCustomerEmail = "";
+        newCustomerAddress = "";
+        StateHasChanged();
+    }
+
+    private void OnCustomerSearchInput(ChangeEventArgs e)
+    {
+        customerSearchQuery = e.Value?.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(customerSearchQuery))
+        {
+            filteredCustomers = availableCustomers;
+            selectedCustomerId = null;
+        }
+        else
+        {
+            filteredCustomers = availableCustomers.Where(c =>
+                c.customer_name.Contains(customerSearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                (c.contact_number != null && c.contact_number.Contains(customerSearchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                (c.email != null && c.email.Contains(customerSearchQuery, StringComparison.OrdinalIgnoreCase))
+            ).ToList();
+            
+            // Don't auto-select - let user choose from dropdown
+            selectedCustomerId = null;
+        }
+        StateHasChanged();
+    }
+
+    private void SelectCustomer(CustomerModel customer)
+    {
+        selectedCustomerId = customer.customer_id;
+        customerSearchQuery = customer.customer_name;
+        filteredCustomers = new List<CustomerModel> { customer };
+        StateHasChanged();
+    }
+
+    private void OnAmountPaidInput(ChangeEventArgs e)
+    {
+        if (decimal.TryParse(e.Value?.ToString(), out decimal paid))
+        {
+            amountPaid = paid;
+        }
+        else
+        {
+            amountPaid = 0;
+        }
         StateHasChanged();
     }
 
@@ -754,6 +952,36 @@ else
             ClearSuccess();
             StateHasChanged();
 
+            int? customerId = null;
+
+            // Handle customer creation/selection
+            if (customerType == "walkin")
+            {
+                // Use walk-in customer ID
+                customerId = walkInCustomerId;
+            }
+            else if (customerType == "existing" && selectedCustomerId.HasValue)
+            {
+                customerId = selectedCustomerId.Value;
+            }
+            else if (customerType == "new" && !string.IsNullOrWhiteSpace(newCustomerName))
+            {
+                // Create new customer
+                var newCustomer = new CustomerModel
+                {
+                    customer_name = newCustomerName.Trim(),
+                    contact_number = string.IsNullOrWhiteSpace(newCustomerContact) ? null : newCustomerContact.Trim(),
+                    email = string.IsNullOrWhiteSpace(newCustomerEmail) ? null : newCustomerEmail.Trim(),
+                    address = string.IsNullOrWhiteSpace(newCustomerAddress) ? null : newCustomerAddress.Trim(),
+                    is_active = true,
+                    created_date = DateTime.Now
+                };
+                customerId = await CustomerService.CreateCustomerAsync(newCustomer);
+                // Reload customers list
+                var customers = await CustomerService.GetCustomersAsync();
+                availableCustomers = customers.Where(c => c.is_active).ToList();
+            }
+
             // Convert cart items to sales order items
             var salesOrderItems = cartItems.Select(c => new SalesOrderItem
             {
@@ -771,7 +999,8 @@ else
                 saleDate,
                 paymentMethod,
                 salesOrderItems,
-                AuthService.CurrentUserId
+                AuthService.CurrentUserId,
+                customerId
             );
 
             // Get the created sales order to show invoice number
@@ -782,6 +1011,14 @@ else
             ClearCart();
             paymentMethod = "";
             saleDate = DateTime.Now;
+            customerType = "walkin";
+            selectedCustomerId = null;
+            customerSearchQuery = "";
+            newCustomerName = "";
+            newCustomerContact = "";
+            newCustomerEmail = "";
+            newCustomerAddress = "";
+            amountPaid = 0;
             
             // Close modal
             ClosePaymentModal();

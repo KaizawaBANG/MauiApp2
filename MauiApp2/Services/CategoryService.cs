@@ -17,6 +17,15 @@ namespace MauiApp2.Services
     }
     public class CategoryService : ICategoryService
     {
+        private readonly IAuditLogService? _auditLogService;
+        private readonly IAuthService? _authService;
+
+        public CategoryService(IAuditLogService? auditLogService = null, IAuthService? authService = null)
+        {
+            _auditLogService = auditLogService;
+            _authService = authService;
+        }
+
         // READ - Get all categories
         public async Task<List<Category>> GetCategoriesAsync()
         {
@@ -89,7 +98,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@description", (object)category.description ?? DBNull.Value);
 
                 var result = await command.ExecuteScalarAsync();
-                return Convert.ToInt32(result);
+                var categoryId = Convert.ToInt32(result);
+
+                // Log audit action
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Create",
+                        "tbl_category",
+                        categoryId,
+                        null,
+                        new { category_name = category.category_name, category_code = categoryCode, description = category.description },
+                        null,
+                        null,
+                        $"added new category: {category.category_name}"
+                    );
+                }
+
+                return categoryId;
             }
             catch (SqlException ex)
             {
@@ -106,6 +133,13 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get old values for audit log
+                Category? oldCategory = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    oldCategory = await GetCategoryByIdAsync(category.category_id);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
@@ -129,7 +163,25 @@ namespace MauiApp2.Services
                 command.Parameters.AddWithValue("@category_code", categoryCode);
                 command.Parameters.AddWithValue("@description", (object)category.description ?? DBNull.Value);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                var success = await command.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && oldCategory != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Update",
+                        "tbl_category",
+                        category.category_id,
+                        new { category_name = oldCategory.category_name, category_code = oldCategory.category_code, description = oldCategory.description },
+                        new { category_name = category.category_name, category_code = categoryCode, description = category.description },
+                        null,
+                        null,
+                        $"updated category: {category.category_name}"
+                    );
+                }
+
+                return success;
             }
             catch (Exception ex)
             {
@@ -142,6 +194,13 @@ namespace MauiApp2.Services
         {
             try
             {
+                // Get category details for audit log before deletion
+                Category? categoryToDelete = null;
+                if (_auditLogService != null && _authService != null && _authService.IsAuthenticated)
+                {
+                    categoryToDelete = await GetCategoryByIdAsync(categoryId);
+                }
+
                 using var connection = db.GetConnection();
                 await connection.OpenAsync();
 
@@ -161,7 +220,25 @@ namespace MauiApp2.Services
                 var deleteCommand = new SqlCommand("DELETE FROM tbl_category WHERE category_id = @category_id", connection);
                 deleteCommand.Parameters.AddWithValue("@category_id", categoryId);
 
-                return await deleteCommand.ExecuteNonQueryAsync() > 0;
+                var success = await deleteCommand.ExecuteNonQueryAsync() > 0;
+
+                // Log audit action
+                if (success && _auditLogService != null && _authService != null && _authService.IsAuthenticated && categoryToDelete != null)
+                {
+                    await _auditLogService.LogActionAsync(
+                        _authService.CurrentUserId,
+                        "Delete",
+                        "tbl_category",
+                        categoryId,
+                        new { category_name = categoryToDelete.category_name, category_code = categoryToDelete.category_code, description = categoryToDelete.description },
+                        null,
+                        null,
+                        null,
+                        $"deleted category: {categoryToDelete.category_name}"
+                    );
+                }
+
+                return success;
             }
             catch (Exception ex)
             {
